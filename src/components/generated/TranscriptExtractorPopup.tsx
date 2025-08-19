@@ -3,7 +3,7 @@
 import { SortableContainer } from "@/dnd-kit/SortableContainer";
 import * as React from "react";
 import { useState } from 'react';
-import { FileText, Sun, Moon, Download, ChevronDown, Clock, Clipboard, Play, Brain, HelpCircle, Lightbulb, History, Calendar, Lock, Github } from 'lucide-react';
+import { FileText, Sun, Moon, Download, ChevronDown, Clock, Clipboard, Play, History, Calendar, Lock, Github, BookOpen, Zap, ExternalLink } from 'lucide-react';
 interface HistoryEntry {
   id: string;
   title: string;
@@ -18,39 +18,44 @@ const mockHistory: HistoryEntry[] = [{
   date: '2024-01-15',
   format: 'Markdown',
   size: '2.3 KB',
-  mpid: "c9cc0aa3-2add-4814-b471-a69a5655f6cc"
+  mpid: "04bcad24-28b9-4dfd-906b-7458262794dc"
 }, {
   id: '2',
   title: 'TypeScript Basics',
   date: '2024-01-14',
   format: 'TXT',
   size: '1.8 KB',
-  mpid: "495e03df-4214-49d4-bb08-34a3ec515f4c"
+  mpid: "61f9a07b-60c2-47a1-b574-b7d92887226e"
 }, {
   id: '3',
   title: 'Node.js Express Setup',
   date: '2024-01-13',
   format: 'JSON',
   size: '3.1 KB',
-  mpid: "01df30f8-fed9-4271-875e-494b935a6148"
+  mpid: "9d210acd-9ba1-42a0-ba3d-849cfa20c5f1"
 }, {
   id: '4',
   title: 'CSS Grid Layout',
   date: '2024-01-12',
   format: 'Markdown',
   size: '1.5 KB',
-  mpid: "319e231e-16d3-4c25-a8bc-a11159c6ffa4"
+  mpid: "b4418adc-7a44-4e70-82c0-98c0851c5ffa"
+}, {
+  id: '5',
+  title: 'JavaScript ES6 Features',
+  date: '2024-01-11',
+  format: 'TXT',
+  size: '1.9 KB',
+  mpid: "9672affd-610c-4026-bd86-6acc99d491db"
 }];
 export const TranscriptExtractorPopup = () => {
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [activeTab, setActiveTab] = useState<'extract' | 'ai-notes' | 'history'>('extract');
   const [includeTimestamps, setIncludeTimestamps] = useState(true);
   const [exportFormat, setExportFormat] = useState<'markdown' | 'txt' | 'json'>('markdown');
-  const [exportTarget, setExportTarget] = useState<'clipboard' | 'download'>('clipboard');
+  const [exportTarget, setExportTarget] = useState<'clipboard' | 'download' | 'notebookllm' | 'notion' | 'obsidian'>('clipboard');
   const [showFormatDropdown, setShowFormatDropdown] = useState(false);
   const [showTargetDropdown, setShowTargetDropdown] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
-  const [aiProcessing, setAiProcessing] = useState<string | null>(null);
   const handleThemeToggle = () => {
     setIsDarkMode(!isDarkMode);
     if (!isDarkMode) {
@@ -66,249 +71,207 @@ export const TranscriptExtractorPopup = () => {
       setIsExtracting(false);
     }, 3000);
   };
-  const handleAiAction = async (action: string) => {
-    setAiProcessing(action);
-    // Simulate AI processing
-    setTimeout(() => {
-      setAiProcessing(null);
-    }, 2500);
-  };
   const handleExportHistory = (entry: HistoryEntry) => {
     console.log('Exporting:', entry.title);
   };
-  const tabs = [{
-    id: 'extract' as const,
-    label: 'Extract',
-    icon: FileText,
-    mpid: "2530face-7bcc-4625-819c-b03c0cf766f4"
+  const exportTargets = [{
+    id: 'clipboard',
+    label: 'Clipboard',
+    icon: Clipboard,
+    mpid: "c16a18fb-aedf-4b34-8a83-e2bce44450a4"
   }, {
-    id: 'ai-notes' as const,
-    label: 'AI Notes',
-    icon: Brain,
-    mpid: "16730b9b-e57f-448c-bf30-1a305cc1a783"
+    id: 'download',
+    label: 'Download File',
+    icon: Download,
+    mpid: "ed69eeb8-9066-4ccd-add7-87be71db3e03"
   }, {
-    id: 'history' as const,
-    label: 'History',
-    icon: History,
-    mpid: "19bcc455-c456-48a4-afdd-cf07cf1b70f6"
+    id: 'notebookllm',
+    label: 'NotebookLLM',
+    icon: BookOpen,
+    mpid: "cb4191e6-f3c2-4771-8b02-bd14bc44367e"
+  }, {
+    id: 'notion',
+    label: 'Notion',
+    icon: ExternalLink,
+    mpid: "d15730eb-41db-4b75-b76b-1488b2132770"
+  }, {
+    id: 'obsidian',
+    label: 'Obsidian',
+    icon: Zap,
+    mpid: "a771cfc0-4ae5-4857-ab83-eaed5ad38313"
   }] as any[];
-  return <SortableContainer dndKitId="4a72e4ab-4a2b-48ff-89b8-900046bc36bc" containerType="regular" prevTag="div" className="w-[400px] h-[600px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800" data-magicpath-id="0" data-magicpath-path="TranscriptExtractorPopup.tsx">
+  const getTargetIcon = (targetId: string) => {
+    const target = exportTargets.find(t => t.id === targetId);
+    return target ? target.icon : Clipboard;
+  };
+  const getTargetLabel = (targetId: string) => {
+    const target = exportTargets.find(t => t.id === targetId);
+    return target ? target.label : 'Clipboard';
+  };
+  return <SortableContainer dndKitId="8327ebf1-b436-4281-a6e9-a26051448749" containerType="regular" prevTag="div" className="w-[400px] h-[600px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800" data-magicpath-id="0" data-magicpath-path="TranscriptExtractorPopup.tsx">
       {/* Header */}
-      <SortableContainer dndKitId="d865cf04-f621-419e-9903-ddcb47eeb3b0" containerType="regular" prevTag="header" className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700" data-magicpath-id="1" data-magicpath-path="TranscriptExtractorPopup.tsx">
-        <SortableContainer dndKitId="afb69b83-ce61-4c87-9e4f-5767599ffe02" containerType="regular" prevTag="div" className="flex items-center space-x-3" data-magicpath-id="2" data-magicpath-path="TranscriptExtractorPopup.tsx">
-          <SortableContainer dndKitId="cf5bdb0a-fc91-4b7e-8a3d-6c19554ddbdd" containerType="regular" prevTag="div" className="p-2 bg-[#4CAF50] rounded-lg" data-magicpath-id="3" data-magicpath-path="TranscriptExtractorPopup.tsx">
+      <SortableContainer dndKitId="016d1ac8-d814-4b08-8ef3-01382145e4aa" containerType="regular" prevTag="header" className="flex items-center justify-between p-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800" data-magicpath-id="1" data-magicpath-path="TranscriptExtractorPopup.tsx">
+        <SortableContainer dndKitId="a2b5f2c6-112b-464d-97fd-19c7b11437d1" containerType="regular" prevTag="div" className="flex items-center space-x-3" data-magicpath-id="2" data-magicpath-path="TranscriptExtractorPopup.tsx">
+          <SortableContainer dndKitId="35e228cd-71ee-45fa-a6c6-8943d7c906d8" containerType="regular" prevTag="div" className="p-2 bg-[#4CAF50] rounded-lg" data-magicpath-id="3" data-magicpath-path="TranscriptExtractorPopup.tsx">
             <FileText className="w-4 h-4 text-white" data-magicpath-id="4" data-magicpath-path="TranscriptExtractorPopup.tsx" />
           </SortableContainer>
-          <SortableContainer dndKitId="88f6c2fc-d38c-4922-880f-4a6fceb6e7e1" containerType="regular" prevTag="div" data-magicpath-id="5" data-magicpath-path="TranscriptExtractorPopup.tsx">
+          <SortableContainer dndKitId="6018d310-3328-411b-b479-ff07823aa1bd" containerType="regular" prevTag="div" data-magicpath-id="5" data-magicpath-path="TranscriptExtractorPopup.tsx">
             <h1 className="text-sm font-semibold text-gray-900 dark:text-white" data-magicpath-id="6" data-magicpath-path="TranscriptExtractorPopup.tsx">
               <span data-magicpath-id="7" data-magicpath-path="TranscriptExtractorPopup.tsx">Transcript Extractor</span>
             </h1>
           </SortableContainer>
         </SortableContainer>
         
-        <SortableContainer dndKitId="ebd36032-567d-421d-8633-3be2fcead43f" containerType="regular" prevTag="button" onClick={handleThemeToggle} className="p-2 rounded-lg bg-white dark:bg-gray-700 shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 dark:border-gray-600" aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'} data-magicpath-id="8" data-magicpath-path="TranscriptExtractorPopup.tsx">
+        <SortableContainer dndKitId="a9ae8f32-2cb8-40e7-8c01-3950f1c7b783" containerType="regular" prevTag="button" onClick={handleThemeToggle} className="p-2 rounded-lg bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 border border-gray-200 dark:border-gray-700" aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'} data-magicpath-id="8" data-magicpath-path="TranscriptExtractorPopup.tsx">
           {isDarkMode ? <Sun className="w-4 h-4 text-yellow-500" data-magicpath-id="9" data-magicpath-path="TranscriptExtractorPopup.tsx" /> : <Moon className="w-4 h-4 text-gray-600" data-magicpath-id="10" data-magicpath-path="TranscriptExtractorPopup.tsx" />}
         </SortableContainer>
       </SortableContainer>
 
-      {/* Tab Navigation */}
-      <SortableContainer dndKitId="74a765e2-747c-41aa-805d-e1f4c61fd983" containerType="collection" prevTag="nav" className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800" data-magicpath-id="11" data-magicpath-path="TranscriptExtractorPopup.tsx">
-        {tabs.map(tab => {
-        const Icon = tab.icon;
-        return <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors duration-200 ${activeTab === tab.id ? 'text-[#4CAF50] border-b-2 border-[#4CAF50] bg-white dark:bg-gray-900' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`} data-magicpath-uuid={(tab as any)["mpid"] ?? "unsafe"} data-magicpath-id="12" data-magicpath-path="TranscriptExtractorPopup.tsx">
-              <Icon className="w-4 h-4" data-magicpath-uuid={(tab as any)["mpid"] ?? "unsafe"} data-magicpath-id="13" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-              <span data-magicpath-uuid={(tab as any)["mpid"] ?? "unsafe"} data-magicpath-field="label:string" data-magicpath-id="14" data-magicpath-path="TranscriptExtractorPopup.tsx">{tab.label}</span>
-            </button>;
-      })}
-      </SortableContainer>
+      {/* Main Content */}
+      <SortableContainer dndKitId="2d2e3031-e256-400a-90f9-3322d4393869" containerType="regular" prevTag="main" className="flex-1 overflow-y-auto" data-magicpath-id="11" data-magicpath-path="TranscriptExtractorPopup.tsx">
+        {/* Extract Section */}
+        <SortableContainer dndKitId="0083f64a-ad28-452e-8003-4e14d48d9407" containerType="regular" prevTag="section" className="p-6 border-b border-gray-200 dark:border-gray-800" data-magicpath-id="12" data-magicpath-path="TranscriptExtractorPopup.tsx">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4" data-magicpath-id="13" data-magicpath-path="TranscriptExtractorPopup.tsx">
+            <span data-magicpath-id="14" data-magicpath-path="TranscriptExtractorPopup.tsx">Extract</span>
+          </h2>
+          
+          <SortableContainer dndKitId="73306f1f-589a-4331-a7e9-b5cc95a03107" containerType="regular" prevTag="button" onClick={handleExtractTranscript} disabled={isExtracting} className={`w-full py-4 px-6 rounded-xl text-white font-medium transition-all duration-200 ${isExtracting ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#4CAF50] hover:bg-[#45a049] shadow-lg hover:shadow-xl'}`} data-magicpath-id="15" data-magicpath-path="TranscriptExtractorPopup.tsx">
+            {isExtracting ? <SortableContainer dndKitId="e9c1ebd4-bcb3-4448-a9bc-012d6c158bc9" containerType="regular" prevTag="div" className="flex items-center justify-center gap-2" data-magicpath-id="16" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" data-magicpath-id="17" data-magicpath-path="TranscriptExtractorPopup.tsx"></div>
+                <span data-magicpath-id="18" data-magicpath-path="TranscriptExtractorPopup.tsx">Extracting...</span>
+              </SortableContainer> : <SortableContainer dndKitId="5af4fa71-c623-4f9c-81a8-d9911bd39765" containerType="regular" prevTag="div" className="flex items-center justify-center gap-2" data-magicpath-id="19" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                <Play className="w-5 h-5" data-magicpath-id="20" data-magicpath-path="TranscriptExtractorPopup.tsx" />
+                <span data-magicpath-id="21" data-magicpath-path="TranscriptExtractorPopup.tsx">Extract Transcript</span>
+              </SortableContainer>}
+          </SortableContainer>
+        </SortableContainer>
 
-      {/* Tab Content */}
-      <SortableContainer dndKitId="7749eb0c-26ff-42b6-8bc4-0cb542b66cc8" containerType="regular" prevTag="main" className="flex-1 overflow-hidden" data-magicpath-id="15" data-magicpath-path="TranscriptExtractorPopup.tsx">
-        {activeTab === 'extract' && <SortableContainer dndKitId="5cc360d3-37de-4c40-88e3-49cc8d4791a9" containerType="regular" prevTag="div" className="p-6 space-y-6 h-full overflow-y-auto" data-magicpath-id="16" data-magicpath-path="TranscriptExtractorPopup.tsx">
-            {/* Main Extract Button */}
-            <SortableContainer dndKitId="0e2b4ab7-3741-4174-8774-2a843ae8d3f6" containerType="regular" prevTag="div" className="text-center" data-magicpath-id="17" data-magicpath-path="TranscriptExtractorPopup.tsx">
-              <SortableContainer dndKitId="afd180a1-503f-4494-b862-d1faf92ba88b" containerType="regular" prevTag="button" onClick={handleExtractTranscript} disabled={isExtracting} className={`w-full py-4 px-6 rounded-xl text-white font-medium transition-all duration-200 ${isExtracting ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#4CAF50] hover:bg-[#45a049] shadow-lg hover:shadow-xl'}`} data-magicpath-id="18" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                {isExtracting ? <SortableContainer dndKitId="550a42c5-2551-47b1-8c05-33b3a5ab3aaf" containerType="regular" prevTag="div" className="flex items-center justify-center gap-2" data-magicpath-id="19" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" data-magicpath-id="20" data-magicpath-path="TranscriptExtractorPopup.tsx"></div>
-                    <span data-magicpath-id="21" data-magicpath-path="TranscriptExtractorPopup.tsx">Extracting...</span>
-                  </SortableContainer> : <SortableContainer dndKitId="80cd247a-7f32-415e-8667-0e8f61c2faad" containerType="regular" prevTag="div" className="flex items-center justify-center gap-2" data-magicpath-id="22" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                    <Play className="w-5 h-5" data-magicpath-id="23" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-                    <span data-magicpath-id="24" data-magicpath-path="TranscriptExtractorPopup.tsx">Extract Transcript</span>
-                  </SortableContainer>}
+        {/* Export Options Section */}
+        <SortableContainer dndKitId="573379c9-1c4e-4247-b08c-d4050405452d" containerType="regular" prevTag="section" className="p-6 border-b border-gray-200 dark:border-gray-800" data-magicpath-id="22" data-magicpath-path="TranscriptExtractorPopup.tsx">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4" data-magicpath-id="23" data-magicpath-path="TranscriptExtractorPopup.tsx">
+            <span data-magicpath-id="24" data-magicpath-path="TranscriptExtractorPopup.tsx">Export Options</span>
+          </h2>
+          
+          <SortableContainer dndKitId="c4718692-ca6c-4ff0-9090-248406c4ac97" containerType="regular" prevTag="div" className="space-y-4" data-magicpath-id="25" data-magicpath-path="TranscriptExtractorPopup.tsx">
+            {/* Export Format */}
+            <SortableContainer dndKitId="0d29eeee-8eb2-439b-9894-4ea99023f82f" containerType="regular" prevTag="div" className="space-y-2" data-magicpath-id="26" data-magicpath-path="TranscriptExtractorPopup.tsx">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300" data-magicpath-id="27" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                <span data-magicpath-id="28" data-magicpath-path="TranscriptExtractorPopup.tsx">Format</span>
+              </label>
+              <SortableContainer dndKitId="170023fa-f03b-4bc9-9a07-bbd4887086b3" containerType="regular" prevTag="div" className="relative" data-magicpath-id="29" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                <SortableContainer dndKitId="1b2226e1-a51d-44fd-9e47-9283818bca9c" containerType="regular" prevTag="button" onClick={() => setShowFormatDropdown(!showFormatDropdown)} className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" data-magicpath-id="30" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                  <span className="text-sm text-gray-700 dark:text-gray-300 capitalize" data-magicpath-id="31" data-magicpath-path="TranscriptExtractorPopup.tsx">{exportFormat}</span>
+                  <ChevronDown className="w-4 h-4 text-gray-500" data-magicpath-id="32" data-magicpath-path="TranscriptExtractorPopup.tsx" />
+                </SortableContainer>
+                
+                {showFormatDropdown && <div className="absolute top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10" data-magicpath-id="33" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                    {['markdown', 'txt', 'json'].map(format => <SortableContainer dndKitId="b65fd09e-4447-44d3-935d-087e2c2012bd" containerType="regular" prevTag="button" key={format} onClick={() => {
+                  setExportFormat(format as any);
+                  setShowFormatDropdown(false);
+                }} className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg capitalize" data-magicpath-id="34" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                        <span data-magicpath-id="35" data-magicpath-path="TranscriptExtractorPopup.tsx">{format}</span>
+                      </SortableContainer>)}
+                  </div>}
               </SortableContainer>
             </SortableContainer>
 
-            {/* Options */}
-            <SortableContainer dndKitId="b989022e-0a86-4792-a94d-78968c1bc552" containerType="regular" prevTag="div" className="space-y-4" data-magicpath-id="25" data-magicpath-path="TranscriptExtractorPopup.tsx">
-              {/* Timestamps Toggle */}
-              <SortableContainer dndKitId="5a520004-1258-4850-8598-be181da5ee6c" containerType="regular" prevTag="div" className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg" data-magicpath-id="26" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                <SortableContainer dndKitId="872ccf71-f7ac-4a73-bf7a-3c631277e420" containerType="regular" prevTag="div" className="flex items-center gap-2" data-magicpath-id="27" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                  <Clock className="w-4 h-4 text-gray-500" data-magicpath-id="28" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300" data-magicpath-id="29" data-magicpath-path="TranscriptExtractorPopup.tsx">Include Timestamps</span>
-                </SortableContainer>
-                <SortableContainer dndKitId="159a38e5-170b-44ff-a7c5-f8bd91ca89b0" containerType="regular" prevTag="button" onClick={() => setIncludeTimestamps(!includeTimestamps)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${includeTimestamps ? 'bg-[#4CAF50]' : 'bg-gray-300 dark:bg-gray-600'}`} data-magicpath-id="30" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${includeTimestamps ? 'translate-x-6' : 'translate-x-1'}`} data-magicpath-id="31" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-                </SortableContainer>
+            {/* Include Timestamps Toggle */}
+            <SortableContainer dndKitId="8076cd66-a029-4257-b50d-7ea633ff5758" containerType="regular" prevTag="div" className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg" data-magicpath-id="36" data-magicpath-path="TranscriptExtractorPopup.tsx">
+              <SortableContainer dndKitId="4d094c15-3f5f-4446-ab03-210ebdfe1fae" containerType="regular" prevTag="div" className="flex items-center gap-2" data-magicpath-id="37" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                <Clock className="w-4 h-4 text-gray-500" data-magicpath-id="38" data-magicpath-path="TranscriptExtractorPopup.tsx" />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300" data-magicpath-id="39" data-magicpath-path="TranscriptExtractorPopup.tsx">Include Timestamps</span>
               </SortableContainer>
-
-              {/* Export Format */}
-              <SortableContainer dndKitId="d9d35bcd-e358-4f21-8b27-fad4f5fbab82" containerType="regular" prevTag="div" className="space-y-2" data-magicpath-id="32" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300" data-magicpath-id="33" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                  <span data-magicpath-id="34" data-magicpath-path="TranscriptExtractorPopup.tsx">Export Format</span>
-                </label>
-                <SortableContainer dndKitId="5fb0e2a2-563d-4bc3-9552-1ea598cf7dbe" containerType="regular" prevTag="div" className="relative" data-magicpath-id="35" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                  <SortableContainer dndKitId="309e1289-f8a7-41d7-b808-095eb571e406" containerType="regular" prevTag="button" onClick={() => setShowFormatDropdown(!showFormatDropdown)} className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" data-magicpath-id="36" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                    <span className="text-sm text-gray-700 dark:text-gray-300 capitalize" data-magicpath-id="37" data-magicpath-path="TranscriptExtractorPopup.tsx">{exportFormat}</span>
-                    <ChevronDown className="w-4 h-4 text-gray-500" data-magicpath-id="38" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-                  </SortableContainer>
-                  
-                  {showFormatDropdown && <div className="absolute top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10" data-magicpath-id="39" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                      {['markdown', 'txt', 'json'].map(format => <SortableContainer dndKitId="ec732506-3377-456e-bd2d-9806ceb1394c" containerType="regular" prevTag="button" key={format} onClick={() => {
-                  setExportFormat(format as any);
-                  setShowFormatDropdown(false);
-                }} className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg capitalize" data-magicpath-id="40" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                          <span data-magicpath-id="41" data-magicpath-path="TranscriptExtractorPopup.tsx">{format}</span>
-                        </SortableContainer>)}
-                    </div>}
-                </SortableContainer>
+              <SortableContainer dndKitId="f0cfcb68-5c15-4a7e-bee2-caada41d4627" containerType="regular" prevTag="button" onClick={() => setIncludeTimestamps(!includeTimestamps)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${includeTimestamps ? 'bg-[#4CAF50]' : 'bg-gray-300 dark:bg-gray-600'}`} data-magicpath-id="40" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${includeTimestamps ? 'translate-x-6' : 'translate-x-1'}`} data-magicpath-id="41" data-magicpath-path="TranscriptExtractorPopup.tsx" />
               </SortableContainer>
+            </SortableContainer>
 
-              {/* Export Target */}
-              <SortableContainer dndKitId="19cd00b5-2960-45b3-8b44-07a195f54e64" containerType="regular" prevTag="div" className="space-y-2" data-magicpath-id="42" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300" data-magicpath-id="43" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                  <span data-magicpath-id="44" data-magicpath-path="TranscriptExtractorPopup.tsx">Export To</span>
-                </label>
-                <SortableContainer dndKitId="37003c35-1525-46bc-9935-5d2c62149e77" containerType="regular" prevTag="div" className="relative" data-magicpath-id="45" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                  <SortableContainer dndKitId="9b0ddf25-d782-4e64-ad29-63abc716a408" containerType="regular" prevTag="button" onClick={() => setShowTargetDropdown(!showTargetDropdown)} className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" data-magicpath-id="46" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                    <SortableContainer dndKitId="e399f4ab-a448-41b7-8bc9-abadee708255" containerType="regular" prevTag="div" className="flex items-center gap-2" data-magicpath-id="47" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                      {exportTarget === 'clipboard' ? <Clipboard className="w-4 h-4 text-gray-500" data-magicpath-id="48" data-magicpath-path="TranscriptExtractorPopup.tsx" /> : <Download className="w-4 h-4 text-gray-500" data-magicpath-id="49" data-magicpath-path="TranscriptExtractorPopup.tsx" />}
-                      <span className="text-sm text-gray-700 dark:text-gray-300 capitalize" data-magicpath-id="50" data-magicpath-path="TranscriptExtractorPopup.tsx">{exportTarget}</span>
-                    </SortableContainer>
-                    <ChevronDown className="w-4 h-4 text-gray-500" data-magicpath-id="51" data-magicpath-path="TranscriptExtractorPopup.tsx" />
+            {/* Export Target */}
+            <SortableContainer dndKitId="71a56c5b-bfa5-40b5-b768-687c9d0c5586" containerType="regular" prevTag="div" className="space-y-2" data-magicpath-id="42" data-magicpath-path="TranscriptExtractorPopup.tsx">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300" data-magicpath-id="43" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                <span data-magicpath-id="44" data-magicpath-path="TranscriptExtractorPopup.tsx">Export To</span>
+              </label>
+              <SortableContainer dndKitId="fae4ebef-a4f9-46c1-a813-102dab2bb60c" containerType="regular" prevTag="div" className="relative" data-magicpath-id="45" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                <SortableContainer dndKitId="3e866251-c266-4ba8-8839-9f6ce179f5be" containerType="regular" prevTag="button" onClick={() => setShowTargetDropdown(!showTargetDropdown)} className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" data-magicpath-id="46" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                  <SortableContainer dndKitId="03b5493d-81aa-4e60-83e7-5f7e07c5e197" containerType="regular" prevTag="div" className="flex items-center gap-2" data-magicpath-id="47" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                    {React.createElement(getTargetIcon(exportTarget), {
+                    className: "w-4 h-4 text-gray-500"
+                  })}
+                    <span className="text-sm text-gray-700 dark:text-gray-300" data-magicpath-id="48" data-magicpath-path="TranscriptExtractorPopup.tsx">{getTargetLabel(exportTarget)}</span>
                   </SortableContainer>
-                  
-                  {showTargetDropdown && <SortableContainer dndKitId="7d59b82d-2292-4900-8a1a-b145b7c52415" containerType="collection" prevTag="div" className="absolute top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10" data-magicpath-id="52" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                      {[{
-                  id: 'clipboard',
-                  label: 'Clipboard',
-                  icon: Clipboard,
-                  mpid: "a6c1e533-46e7-4ffd-b297-3308858cc209"
-                }, {
-                  id: 'download',
-                  label: 'Download',
-                  icon: Download,
-                  mpid: "370f9cc4-79d5-4071-bd62-c01050275533"
-                }].map(target => {
+                  <ChevronDown className="w-4 h-4 text-gray-500" data-magicpath-id="49" data-magicpath-path="TranscriptExtractorPopup.tsx" />
+                </SortableContainer>
+                
+                {showTargetDropdown && <SortableContainer dndKitId="ed44bbce-8ebf-45b9-a351-7683bbe71067" containerType="collection" prevTag="div" className="absolute top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10" data-magicpath-id="50" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                    {exportTargets.map(target => {
                   const Icon = target.icon;
                   return <button key={target.id} onClick={() => {
                     setExportTarget(target.id as any);
                     setShowTargetDropdown(false);
-                  }} className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg" data-magicpath-uuid={(target as any)["mpid"] ?? "unsafe"} data-magicpath-id="53" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                            <Icon className="w-4 h-4 text-gray-500" data-magicpath-uuid={(target as any)["mpid"] ?? "unsafe"} data-magicpath-id="54" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-                            <span data-magicpath-uuid={(target as any)["mpid"] ?? "unsafe"} data-magicpath-field="label:unknown" data-magicpath-id="55" data-magicpath-path="TranscriptExtractorPopup.tsx">{target.label}</span>
-                          </button>;
+                  }} className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg" data-magicpath-uuid={(target as any)["mpid"] ?? "unsafe"} data-magicpath-id="51" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                          <Icon className="w-4 h-4 text-gray-500" data-magicpath-uuid={(target as any)["mpid"] ?? "unsafe"} data-magicpath-id="52" data-magicpath-path="TranscriptExtractorPopup.tsx" />
+                          <span data-magicpath-uuid={(target as any)["mpid"] ?? "unsafe"} data-magicpath-field="label:string" data-magicpath-id="53" data-magicpath-path="TranscriptExtractorPopup.tsx">{target.label}</span>
+                        </button>;
                 })}
-                    </SortableContainer>}
-                </SortableContainer>
+                  </SortableContainer>}
               </SortableContainer>
             </SortableContainer>
-          </SortableContainer>}
+          </SortableContainer>
+        </SortableContainer>
 
-        {activeTab === 'ai-notes' && <SortableContainer dndKitId="868f5489-8f34-4a8e-91ad-01fa3fbfa6cd" containerType="collection" prevTag="div" className="p-6 space-y-4 h-full overflow-y-auto" data-magicpath-id="56" data-magicpath-path="TranscriptExtractorPopup.tsx">
-            {[{
-          id: 'summarize',
-          title: 'Summarize',
-          description: 'Generate a concise summary',
-          icon: FileText,
-          mpid: "7166d02f-96e2-49cc-b55a-4424d5536c65"
-        }, {
-          id: 'quiz',
-          title: 'Generate Quiz',
-          description: 'Create practice questions',
-          icon: HelpCircle,
-          mpid: "3ab5af5f-b6f2-4464-920a-ed8e1ba83714"
-        }, {
-          id: 'takeaways',
-          title: 'Key Takeaways',
-          description: 'Extract main points',
-          icon: Lightbulb,
-          mpid: "ad529494-cd96-4261-b927-112900488c2e"
-        }].map(action => {
-          const Icon = action.icon;
-          const isProcessing = aiProcessing === action.id;
-          return <div key={action.id} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700" data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="57" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                  <div className="flex items-start justify-between" data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="58" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                    <div className="flex items-start gap-3" data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="59" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                      <div className="p-2 bg-[#4CAF50] bg-opacity-10 rounded-lg" data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="60" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                        <Icon className="w-4 h-4 text-[#4CAF50]" data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="61" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-                      </div>
-                      <div data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="62" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white" data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="63" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                          <span data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-field="title:unknown" data-magicpath-id="64" data-magicpath-path="TranscriptExtractorPopup.tsx">{action.title}</span>
-                        </h3>
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1" data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="65" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                          <span data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-field="description:unknown" data-magicpath-id="66" data-magicpath-path="TranscriptExtractorPopup.tsx">{action.description}</span>
-                        </p>
+        {/* History Section */}
+        <SortableContainer dndKitId="8228540b-0bc9-4034-a5ed-0cff9be106d4" containerType="regular" prevTag="section" className="p-6" data-magicpath-id="54" data-magicpath-path="TranscriptExtractorPopup.tsx">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4" data-magicpath-id="55" data-magicpath-path="TranscriptExtractorPopup.tsx">
+            <span data-magicpath-id="56" data-magicpath-path="TranscriptExtractorPopup.tsx">History</span>
+          </h2>
+          
+          {mockHistory.length === 0 ? <SortableContainer dndKitId="c8b5fcab-5c8b-4217-b8b5-a20f8263f366" containerType="regular" prevTag="div" className="flex flex-col items-center justify-center py-8 text-gray-500 dark:text-gray-400" data-magicpath-id="57" data-magicpath-path="TranscriptExtractorPopup.tsx">
+              <History className="w-8 h-8 mb-2 opacity-50" data-magicpath-id="58" data-magicpath-path="TranscriptExtractorPopup.tsx" />
+              <p className="text-sm text-center" data-magicpath-id="59" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                <span data-magicpath-id="60" data-magicpath-path="TranscriptExtractorPopup.tsx">No transcripts extracted yet</span>
+              </p>
+            </SortableContainer> : <SortableContainer dndKitId="fdb2a35c-ea44-4709-a5f2-2289acd21268" containerType="collection" prevTag="div" className="space-y-2" data-magicpath-id="61" data-magicpath-path="TranscriptExtractorPopup.tsx">
+              {mockHistory.slice(0, 5).map(entry => <div key={entry.id} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="62" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                  <div className="flex items-center justify-between" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="63" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                    <div className="flex-1 min-w-0" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="64" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-white truncate" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="65" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                        <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-field="title:unknown" data-magicpath-id="66" data-magicpath-path="TranscriptExtractorPopup.tsx">{entry.title}</span>
+                      </h3>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="67" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                        <div className="flex items-center gap-1" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="68" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                          <Calendar className="w-3 h-3" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="69" data-magicpath-path="TranscriptExtractorPopup.tsx" />
+                          <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-field="date:unknown" data-magicpath-id="70" data-magicpath-path="TranscriptExtractorPopup.tsx">{entry.date}</span>
+                        </div>
+                        <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="71" data-magicpath-path="TranscriptExtractorPopup.tsx">•</span>
+                        <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-field="format:unknown" data-magicpath-id="72" data-magicpath-path="TranscriptExtractorPopup.tsx">{entry.format}</span>
+                        <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="73" data-magicpath-path="TranscriptExtractorPopup.tsx">•</span>
+                        <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-field="size:unknown" data-magicpath-id="74" data-magicpath-path="TranscriptExtractorPopup.tsx">{entry.size}</span>
                       </div>
                     </div>
                     
-                    <button onClick={() => handleAiAction(action.id)} disabled={isProcessing} className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 ${isProcessing ? 'bg-gray-200 dark:bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-[#4CAF50] text-white hover:bg-[#45a049] shadow-sm hover:shadow-md'}`} data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="67" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                      {isProcessing ? <div className="flex items-center gap-1" data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="68" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                          <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="69" data-magicpath-path="TranscriptExtractorPopup.tsx"></div>
-                          <span data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="70" data-magicpath-path="TranscriptExtractorPopup.tsx">Running...</span>
-                        </div> : <span data-magicpath-uuid={(action as any)["mpid"] ?? "unsafe"} data-magicpath-id="71" data-magicpath-path="TranscriptExtractorPopup.tsx">Run</span>}
+                    <button onClick={() => handleExportHistory(entry)} className="p-1.5 text-gray-500 hover:text-[#4CAF50] hover:bg-[#4CAF50] hover:bg-opacity-10 rounded-lg transition-colors" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="75" data-magicpath-path="TranscriptExtractorPopup.tsx">
+                      <Download className="w-4 h-4" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="76" data-magicpath-path="TranscriptExtractorPopup.tsx" />
                     </button>
                   </div>
-                </div>;
-        })}
-          </SortableContainer>}
-
-        {activeTab === 'history' && <SortableContainer dndKitId="52d7036f-7b8e-43c5-a55d-c272de5cd7c0" containerType="regular" prevTag="div" className="h-full overflow-y-auto" data-magicpath-id="72" data-magicpath-path="TranscriptExtractorPopup.tsx">
-            {mockHistory.length === 0 ? <SortableContainer dndKitId="0c64d122-c67b-4232-abcc-709f805a704d" containerType="regular" prevTag="div" className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 p-6" data-magicpath-id="73" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                <History className="w-8 h-8 mb-2 opacity-50" data-magicpath-id="74" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-                <p className="text-sm text-center" data-magicpath-id="75" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                  <span data-magicpath-id="76" data-magicpath-path="TranscriptExtractorPopup.tsx">No transcripts extracted yet</span>
-                </p>
-              </SortableContainer> : <SortableContainer dndKitId="472dc7a5-d316-4149-a015-c7cc9426cd35" containerType="collection" prevTag="div" className="p-4 space-y-2" data-magicpath-id="77" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                {mockHistory.map(entry => <div key={entry.id} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="78" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                    <div className="flex items-center justify-between" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="79" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                      <div className="flex-1 min-w-0" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="80" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                        <h3 className="text-sm font-medium text-gray-900 dark:text-white truncate" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="81" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                          <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-field="title:string" data-magicpath-id="82" data-magicpath-path="TranscriptExtractorPopup.tsx">{entry.title}</span>
-                        </h3>
-                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="83" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                          <div className="flex items-center gap-1" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="84" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                            <Calendar className="w-3 h-3" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="85" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-                            <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-field="date:string" data-magicpath-id="86" data-magicpath-path="TranscriptExtractorPopup.tsx">{entry.date}</span>
-                          </div>
-                          <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="87" data-magicpath-path="TranscriptExtractorPopup.tsx">•</span>
-                          <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-field="format:string" data-magicpath-id="88" data-magicpath-path="TranscriptExtractorPopup.tsx">{entry.format}</span>
-                          <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="89" data-magicpath-path="TranscriptExtractorPopup.tsx">•</span>
-                          <span data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-field="size:string" data-magicpath-id="90" data-magicpath-path="TranscriptExtractorPopup.tsx">{entry.size}</span>
-                        </div>
-                      </div>
-                      
-                      <button onClick={() => handleExportHistory(entry)} className="p-1.5 text-gray-500 hover:text-[#4CAF50] hover:bg-[#4CAF50] hover:bg-opacity-10 rounded-lg transition-colors" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="91" data-magicpath-path="TranscriptExtractorPopup.tsx">
-                        <Download className="w-4 h-4" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="92" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-                      </button>
-                    </div>
-                  </div>)}
-              </SortableContainer>}
-          </SortableContainer>}
+                </div>)}
+            </SortableContainer>}
+        </SortableContainer>
       </SortableContainer>
 
       {/* Footer */}
-      <SortableContainer dndKitId="9cedc287-603f-47b4-8d86-7c62db7bf7b0" containerType="regular" prevTag="footer" className="p-4 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700" data-magicpath-id="93" data-magicpath-path="TranscriptExtractorPopup.tsx">
-        <SortableContainer dndKitId="4e9e5daa-bfdc-462c-8499-24f27b5cc924" containerType="regular" prevTag="div" className="flex items-center justify-center gap-4 text-xs text-gray-500 dark:text-gray-400" data-magicpath-id="94" data-magicpath-path="TranscriptExtractorPopup.tsx">
-          <SortableContainer dndKitId="43ae8f00-828a-423a-96b8-22570d20e79a" containerType="regular" prevTag="div" className="flex items-center gap-1" data-magicpath-id="95" data-magicpath-path="TranscriptExtractorPopup.tsx">
-            <Lock className="w-3 h-3" data-magicpath-id="96" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-            <span data-magicpath-id="97" data-magicpath-path="TranscriptExtractorPopup.tsx">Local-first</span>
+      <SortableContainer dndKitId="b717d12b-7dc9-43b1-954b-397c2112afdb" containerType="regular" prevTag="footer" className="p-4 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700" data-magicpath-id="77" data-magicpath-path="TranscriptExtractorPopup.tsx">
+        <SortableContainer dndKitId="040ec6a8-220f-47d9-8b19-1f47071f817a" containerType="regular" prevTag="div" className="flex items-center justify-center gap-3 text-xs text-gray-500 dark:text-gray-400" data-magicpath-id="78" data-magicpath-path="TranscriptExtractorPopup.tsx">
+          <SortableContainer dndKitId="76db3a42-b123-47b2-97be-048c42d575f3" containerType="regular" prevTag="div" className="flex items-center gap-1" data-magicpath-id="79" data-magicpath-path="TranscriptExtractorPopup.tsx">
+            <Lock className="w-3 h-3" data-magicpath-id="80" data-magicpath-path="TranscriptExtractorPopup.tsx" />
+            <span data-magicpath-id="81" data-magicpath-path="TranscriptExtractorPopup.tsx">Local-first</span>
           </SortableContainer>
-          <span data-magicpath-id="98" data-magicpath-path="TranscriptExtractorPopup.tsx">•</span>
-          <SortableContainer dndKitId="c0d89f3e-ae55-4643-a030-81d679c7e075" containerType="regular" prevTag="div" className="flex items-center gap-1" data-magicpath-id="99" data-magicpath-path="TranscriptExtractorPopup.tsx">
-            <Github className="w-3 h-3" data-magicpath-id="100" data-magicpath-path="TranscriptExtractorPopup.tsx" />
-            <span data-magicpath-id="101" data-magicpath-path="TranscriptExtractorPopup.tsx">Open Source</span>
+          <span data-magicpath-id="82" data-magicpath-path="TranscriptExtractorPopup.tsx">•</span>
+          <SortableContainer dndKitId="5daf2426-426f-4119-84c0-ed7e06d6718e" containerType="regular" prevTag="div" className="flex items-center gap-1" data-magicpath-id="83" data-magicpath-path="TranscriptExtractorPopup.tsx">
+            <Github className="w-3 h-3" data-magicpath-id="84" data-magicpath-path="TranscriptExtractorPopup.tsx" />
+            <span data-magicpath-id="85" data-magicpath-path="TranscriptExtractorPopup.tsx">Open Source</span>
           </SortableContainer>
+          <span data-magicpath-id="86" data-magicpath-path="TranscriptExtractorPopup.tsx">•</span>
+          <span data-magicpath-id="87" data-magicpath-path="TranscriptExtractorPopup.tsx">MIT License</span>
         </SortableContainer>
       </SortableContainer>
     </SortableContainer>;

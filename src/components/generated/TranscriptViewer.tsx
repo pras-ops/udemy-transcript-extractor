@@ -39,16 +39,16 @@ export const TranscriptViewer = ({
   };
 
   // @return
-  return <SortableContainer dndKitId="98f25bdb-7fa2-477b-b533-53f8daae286f" containerType="regular" prevTag="div" className="flex-1 flex flex-col" data-magicpath-id="3" data-magicpath-path="TranscriptViewer.tsx">
-      <SortableContainer dndKitId="d0b56213-0be5-45d9-a13e-74f4a03fcf37" containerType="regular" prevTag="div" className="p-4 border-b border-gray-200 dark:border-gray-700" data-magicpath-id="4" data-magicpath-path="TranscriptViewer.tsx">
-        <SortableContainer dndKitId="34a4534b-504d-4be7-a77d-057e7d5bc66e" containerType="regular" prevTag="div" className="relative" data-magicpath-id="5" data-magicpath-path="TranscriptViewer.tsx">
+  return <SortableContainer dndKitId="1941947c-b591-41fa-825e-d11e2ce6e79f" containerType="regular" prevTag="div" className="flex-1 flex flex-col" data-magicpath-id="3" data-magicpath-path="TranscriptViewer.tsx">
+      <SortableContainer dndKitId="bb451abd-3c72-4a48-bcc3-657de01791a2" containerType="regular" prevTag="div" className="p-4 border-b border-gray-200 dark:border-gray-700" data-magicpath-id="4" data-magicpath-path="TranscriptViewer.tsx">
+        <SortableContainer dndKitId="9d603e13-e136-4886-8cb2-28a60ff5b1c5" containerType="regular" prevTag="div" className="relative" data-magicpath-id="5" data-magicpath-path="TranscriptViewer.tsx">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" data-magicpath-id="6" data-magicpath-path="TranscriptViewer.tsx" />
           <input type="text" placeholder="Search transcript..." value={searchQuery} onChange={e => onSearchChange(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 transition-all duration-200" data-magicpath-id="7" data-magicpath-path="TranscriptViewer.tsx" />
         </SortableContainer>
       </SortableContainer>
       
-      <SortableContainer dndKitId="d59f7bf5-05a1-400d-a83a-748cdca6c736" containerType="regular" prevTag="div" className="flex-1 overflow-y-auto" data-magicpath-id="8" data-magicpath-path="TranscriptViewer.tsx">
-        {isExtracting ? <SortableContainer dndKitId="1c80b860-04d1-4737-871d-2980b6c98bff" containerType="regular" prevTag="div" className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 p-8" data-magicpath-id="9" data-magicpath-path="TranscriptViewer.tsx">
+      <SortableContainer dndKitId="08eac5ac-6455-4608-92e1-6500b7485461" containerType="regular" prevTag="div" className="flex-1 overflow-y-auto" data-magicpath-id="8" data-magicpath-path="TranscriptViewer.tsx">
+        {isExtracting ? <SortableContainer dndKitId="30431eb0-da8d-412a-ba74-8feac0e0420f" containerType="regular" prevTag="div" className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 p-8" data-magicpath-id="9" data-magicpath-path="TranscriptViewer.tsx">
             <div className="w-8 h-8 border-2 border-orange-300 border-t-orange-600 rounded-full animate-spin mb-4" data-magicpath-id="10" data-magicpath-path="TranscriptViewer.tsx"></div>
             <p className="text-sm text-center" data-magicpath-id="11" data-magicpath-path="TranscriptViewer.tsx">
               <span data-magicpath-id="12" data-magicpath-path="TranscriptViewer.tsx">Extracting transcript from video...</span>
@@ -56,7 +56,7 @@ export const TranscriptViewer = ({
             <p className="text-xs text-center mt-1 opacity-75" data-magicpath-id="13" data-magicpath-path="TranscriptViewer.tsx">
               <span data-magicpath-id="14" data-magicpath-path="TranscriptViewer.tsx">This may take a few moments</span>
             </p>
-          </SortableContainer> : isEmpty ? <SortableContainer dndKitId="53eec210-548b-4c46-ab81-3c204cfc547e" containerType="regular" prevTag="div" className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 p-8" data-magicpath-id="15" data-magicpath-path="TranscriptViewer.tsx">
+          </SortableContainer> : isEmpty ? <SortableContainer dndKitId="82301789-2cf5-49f9-820f-81acac88b336" containerType="regular" prevTag="div" className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 p-8" data-magicpath-id="15" data-magicpath-path="TranscriptViewer.tsx">
             <Search className="w-8 h-8 mb-2 opacity-50" data-magicpath-id="16" data-magicpath-path="TranscriptViewer.tsx" />
             <p className="text-sm text-center" data-magicpath-id="17" data-magicpath-path="TranscriptViewer.tsx">
               <span data-magicpath-id="18" data-magicpath-path="TranscriptViewer.tsx">No transcript available yet.</span>
@@ -64,12 +64,12 @@ export const TranscriptViewer = ({
             <p className="text-xs text-center mt-1 opacity-75" data-magicpath-id="19" data-magicpath-path="TranscriptViewer.tsx">
               <span data-magicpath-id="20" data-magicpath-path="TranscriptViewer.tsx">Click "Extract Transcript" to get started</span>
             </p>
-          </SortableContainer> : transcript.length === 0 ? <SortableContainer dndKitId="8a874fa5-7f1e-448d-9f64-e873ed2dbf23" containerType="regular" prevTag="div" className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 p-8" data-magicpath-id="21" data-magicpath-path="TranscriptViewer.tsx">
+          </SortableContainer> : transcript.length === 0 ? <SortableContainer dndKitId="9c54bbe9-dead-4237-abe6-46a496591554" containerType="regular" prevTag="div" className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 p-8" data-magicpath-id="21" data-magicpath-path="TranscriptViewer.tsx">
             <Search className="w-8 h-8 mb-2 opacity-50" data-magicpath-id="22" data-magicpath-path="TranscriptViewer.tsx" />
             <p className="text-sm text-center" data-magicpath-id="23" data-magicpath-path="TranscriptViewer.tsx">
               <span data-magicpath-id="24" data-magicpath-path="TranscriptViewer.tsx">No transcript entries found matching your search.</span>
             </p>
-          </SortableContainer> : <SortableContainer dndKitId="9382a6b9-6e02-434a-b6cf-2f477aa181aa" containerType="collection" prevTag="div" className="p-4 space-y-3" data-magicpath-id="25" data-magicpath-path="TranscriptViewer.tsx">
+          </SortableContainer> : <SortableContainer dndKitId="285e4217-9b94-4938-8db6-a65be114dbd3" containerType="collection" prevTag="div" className="p-4 space-y-3" data-magicpath-id="25" data-magicpath-path="TranscriptViewer.tsx">
             {transcript.map(entry => <div key={entry.id} className="flex gap-4 group hover:bg-gray-50 dark:hover:bg-gray-800 p-2 rounded-lg transition-colors duration-150" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="26" data-magicpath-path="TranscriptViewer.tsx">
                 <div className="flex items-start gap-1 text-xs font-mono text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded min-w-fit" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="27" data-magicpath-path="TranscriptViewer.tsx">
                   <Clock className="w-3 h-3 mt-0.5" data-magicpath-uuid={(entry as any)["mpid"] ?? "unsafe"} data-magicpath-id="28" data-magicpath-path="TranscriptViewer.tsx" />
