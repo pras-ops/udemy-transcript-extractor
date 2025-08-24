@@ -13,7 +13,7 @@ body {
   height: 100%;
   min-height: 100vh;
   box-sizing: border-box;
-  overflow: auto;
+  overflow: hidden; /* Prevent scrollbars in extension popup */
 }
 
 @theme inline {
@@ -139,5 +139,28 @@ body {
     width: 100%;
     margin: 0;
     padding: 0;
+  }
+  
+  /* Extension-specific styles */
+  body {
+    /* Prevent text selection in extension popup */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+  
+  /* Allow text selection in specific areas */
+  input, textarea, [contenteditable] {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+  }
+  
+  /* Ensure proper font rendering in extension */
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
