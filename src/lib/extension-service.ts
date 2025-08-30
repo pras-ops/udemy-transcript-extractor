@@ -9,6 +9,16 @@ export interface ExtensionServiceResponse<T = any> {
 
 export class ExtensionService {
   /**
+   * Simple text sanitization to prevent XSS
+   */
+  private static sanitizeText(text: string): string {
+    return text
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove scripts
+      .replace(/javascript:/gi, '') // Remove javascript: links
+      .trim();
+  }
+
+  /**
    * Send message to content script and get response
    */
   private static async sendMessage<T>(message: any): Promise<ExtensionServiceResponse<T>> {
@@ -162,15 +172,20 @@ export class ExtensionService {
   /**
    * Format transcript for different export types
    */
-  static formatTranscript(transcript: string, format: 'markdown' | 'txt' | 'json', includeTimestamps: boolean = true): string {
+  static formatTranscript(transcript: string, format: 'markdown' | 'txt' | 'json' | 'rag', includeTimestamps: boolean = true): string {
+    // Sanitize input first
+    const cleanTranscript = this.sanitizeText(transcript);
+    
     switch (format) {
       case 'markdown':
-        return this.formatAsMarkdown(transcript, includeTimestamps);
+        return this.formatAsMarkdown(cleanTranscript, includeTimestamps);
       case 'json':
-        return this.formatAsJSON(transcript, includeTimestamps);
+        return this.formatAsJSON(cleanTranscript, includeTimestamps);
+      case 'rag':
+        return this.formatAsRAG(cleanTranscript, includeTimestamps);
       case 'txt':
       default:
-        return this.formatAsText(transcript, includeTimestamps);
+        return this.formatAsText(cleanTranscript, includeTimestamps);
     }
   }
 
@@ -218,6 +233,90 @@ export class ExtensionService {
     }
   }
 
+  private static formatAsRAG(transcript: string, includeTimestamps: boolean): string {
+    const lines = transcript.split('\n\n');
+    
+    // Clean and merge lines into larger chunks (3-5 lines per chunk)
+    const chunks: string[] = [];
+    let currentChunk = '';
+    let chunkCount = 0;
+    const maxLinesPerChunk = 4; // Keep it simple - 4 lines per chunk
+    
+    lines.forEach((line, index) => {
+      let text = line;
+      let timestamp = '';
+      
+      if (includeTimestamps) {
+        // Handle timestamp formats
+        const timestampMatch = line.match(/^\[([^\]]*)\]\s*(.+)$/);
+        if (timestampMatch) {
+          const bracketContent = timestampMatch[1];
+          text = timestampMatch[2];
+          
+          // Check if bracket content looks like a timestamp
+          if (bracketContent && /^\d{1,2}:\d{2}(:\d{2})?$/.test(bracketContent)) {
+            timestamp = bracketContent;
+          } else {
+            // Other content in brackets - treat as part of text
+            text = line;
+            timestamp = '';
+          }
+        } else {
+          text = line;
+          timestamp = '';
+        }
+      } else {
+        // Remove any timestamp-like content from line
+        text = line.replace(/^\[[^\]]*\]\s*/, '');
+      }
+      
+      // Clean text (remove artifacts, extra spaces)
+      text = text.trim().replace(/\s+/g, ' ');
+      
+      // Skip empty or very short lines
+      if (!text || text.length < 10) return;
+      
+      // Add to current chunk
+      if (currentChunk) {
+        currentChunk += ' ' + text;
+      } else {
+        currentChunk = text;
+      }
+      
+      // Create chunk when we have enough lines or reach end
+      if ((index + 1) % maxLinesPerChunk === 0 || index === lines.length - 1) {
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+          chunkCount++;
+        }
+        currentChunk = '';
+      }
+    });
+    
+    // Create simple RAG format with fewer, larger chunks
+    const ragChunks = chunks.map((chunk, index) => ({
+      id: `chunk_${index + 1}`,
+      content: chunk,
+      metadata: {
+        chunk_index: index + 1,
+        source: 'video_transcript',
+        type: 'educational_content'
+      }
+    }));
+    
+    return JSON.stringify({
+      document_type: 'video_transcript',
+      total_chunks: ragChunks.length,
+      chunks: ragChunks,
+      metadata: {
+        extraction_date: new Date().toISOString(),
+        format_version: '2.0',
+        rag_optimized: true,
+        chunking_strategy: 'simple_merge'
+      }
+    }, null, 2);
+  }
+
   /**
    * Generate filename for download
    */
@@ -240,6 +339,7 @@ export class ExtensionService {
       case 'txt':
         return 'text/plain';
       case 'json':
+      case 'rag':
         return 'application/json';
       default:
         return 'text/plain';

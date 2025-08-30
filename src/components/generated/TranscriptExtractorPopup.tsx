@@ -2,14 +2,34 @@
 
 import * as React from "react";
 import { useState, useEffect, useMemo } from 'react';
-import { FileText, Sun, Moon, Download, ChevronDown, Clock, Clipboard, Play, Lock, Github, Zap, AlertCircle, CheckCircle, TestTube } from 'lucide-react';
+import { FileText, Sun, Moon, Download, ChevronDown, Clock, Clipboard, Play, Lock, Github, Zap, AlertCircle, CheckCircle } from 'lucide-react';
 import { ExtensionService } from '../../lib/extension-service';
 import { StorageService } from '../../lib/storage-service';
+
+// Simple debouncing utility
+const debounce = (func: Function, wait: number) => {
+  let timeout: NodeJS.Timeout;
+  return (...args: any[]) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(null, args), wait);
+  };
+};
+
+// Custom LogIcon component using actual Log.png image
+const LogIcon = ({ className = "", ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
+  <img 
+    src="/Log.png" 
+    alt="Transcript Extractor Logo"
+    className={className}
+    {...props}
+  />
+);
+
 export const TranscriptExtractorPopup = () => {
   const [isDarkMode, setIsDarkMode] = useState(true);
 
   const [includeTimestamps, setIncludeTimestamps] = useState(true);
-  const [exportFormat, setExportFormat] = useState<'markdown' | 'txt' | 'json'>('markdown');
+  const [exportFormat, setExportFormat] = useState<'markdown' | 'txt' | 'json' | 'rag'>('markdown');
   const [exportTarget, setExportTarget] = useState<'clipboard' | 'download'>('clipboard');
   const [showFormatDropdown, setShowFormatDropdown] = useState(false);
 
@@ -21,8 +41,7 @@ export const TranscriptExtractorPopup = () => {
   const [extractedTranscript, setExtractedTranscript] = useState<string>('');
   const [extractionStatus, setExtractionStatus] = useState<'idle' | 'extracting' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [isTestingSelectors, setIsTestingSelectors] = useState(false);
-  const [isTestingCourseStructure, setIsTestingCourseStructure] = useState(false);
+  // Test state variables removed for production
   
   // Batch collection states
   const [batchMode, setBatchMode] = useState<'next' | 'collect'>('next');
@@ -80,7 +99,6 @@ export const TranscriptExtractorPopup = () => {
       // Default to 1 if we can't determine
       return 1;
     } catch (error) {
-      console.log('🎯 Error getting section number:', error);
       return 1;
     }
   };
@@ -111,41 +129,36 @@ export const TranscriptExtractorPopup = () => {
         const { clipboardData: savedData, clipboardEntries: savedEntries } = await StorageService.loadClipboardData();
         setClipboardData(savedData);
         setClipboardEntries(savedEntries);
-        console.log('🎯 Loaded clipboard data from storage. Entries:', savedEntries);
+        // Loaded clipboard data from storage
       } catch (error) {
         console.error('Failed to load clipboard data:', error);
       }
     };
     
     loadClipboardData();
+    
+    // Simple cleanup on unmount
+    return () => {
+      setExtractionStatus('idle');
+      setExtractedTranscript('');
+    };
   }, []);
 
-  // Auto-save batch collection state when it changes
-  useEffect(() => {
-    if (batchProgress && Object.keys(batchProgress).length > 0) {
-      StorageService.saveBatchState(batchProgress, batchStats, batchMode, isBatchCollecting);
-    }
-  }, [batchProgress, batchStats, batchMode, isBatchCollecting]);
+  // Auto-save batch collection state when it changes (with debouncing)
+  const debouncedSaveBatchState = useMemo(
+    () => debounce((progress: any, stats: any, mode: any, collecting: boolean) => {
+      if (progress && Object.keys(progress).length > 0) {
+        StorageService.saveBatchState(progress, stats, mode, collecting);
+      }
+    }, 300),
+    []
+  );
 
-  // Debug logging for batch collection state
   useEffect(() => {
-    console.log('🎯 Batch Collection State Debug:', {
-      isBatchCollecting,
-      batchStats,
-      batchProgress: Object.keys(batchProgress).length,
-      shouldShowProgress: isBatchCollecting && batchStats.total > 0
-    });
-  }, [isBatchCollecting, batchStats, batchProgress]);
+    debouncedSaveBatchState(batchProgress, batchStats, batchMode, isBatchCollecting);
+  }, [batchProgress, batchStats, batchMode, isBatchCollecting, debouncedSaveBatchState]);
 
-  // Additional debug logging for progress bar rendering
-  useEffect(() => {
-    console.log('🎯 Progress Bar Render Debug:', {
-      isBatchCollecting,
-      batchStatsTotal: batchStats.total,
-      shouldShowProgressBar: isBatchCollecting && batchStats.total > 0,
-      batchProgressKeys: Object.keys(batchProgress).length
-    });
-  }, [isBatchCollecting, batchStats.total, batchProgress]);
+  // Debug logging removed for production
 
   // Auto-save current processing lecture
   useEffect(() => {
@@ -161,10 +174,8 @@ export const TranscriptExtractorPopup = () => {
       const newSection = getCurrentSectionNumber();
       if (currentSection && currentSection !== newSection.toString() && isBatchCollecting) {
         // We've moved to a new section - increment the completed count
-        console.log('🎯 Section change detected:', currentSection, '→', newSection);
         setBatchStats(prev => {
           const updated = { ...prev, completed: prev.completed + 1 };
-          console.log('🎯 Section completed! Updated batch stats:', updated);
           return updated;
         });
         setProgressUpdateTrigger(prev => prev + 1);
@@ -220,8 +231,16 @@ export const TranscriptExtractorPopup = () => {
       setExportFormat(savedState.exportFormat);
       setExportTarget(savedState.exportTarget);
       setIncludeTimestamps(savedState.includeTimestamps);
-      setExtractedTranscript(savedState.extractedTranscript);
-      setExtractionStatus(savedState.extractionStatus);
+      
+      // Validate extracted transcript - reset if invalid
+      if (savedState.extractedTranscript && savedState.extractedTranscript.trim().length > 0) {
+        setExtractedTranscript(savedState.extractedTranscript);
+        setExtractionStatus(savedState.extractionStatus);
+      } else {
+        // Reset invalid extraction state
+        setExtractedTranscript('');
+        setExtractionStatus('idle');
+      }
       
       // Restore course data if available
       if (savedState.courseStructure) {
@@ -234,7 +253,7 @@ export const TranscriptExtractorPopup = () => {
         setAvailability(savedState.availability);
       }
       
-      console.log('🎯 State restored from storage:', savedState);
+      // State restored from storage
     } catch (error) {
       console.error('Failed to load saved state:', error);
     }
@@ -263,12 +282,8 @@ export const TranscriptExtractorPopup = () => {
           // Get course structure
           setIsCourseStructureLoading(true);
           const courseResponse = await ExtensionService.extractCourseStructure();
-          console.log('🎯 Course structure response:', courseResponse);
-          if (courseResponse.success && courseResponse.data) {
-            console.log('🎯 Setting course structure:', courseResponse.data);
-            console.log('🎯 Course structure sections:', courseResponse.data.sections);
-            console.log('🎯 Course structure sections length:', courseResponse.data.sections?.length);
-            setCourseStructure(courseResponse.data);
+                if (courseResponse.success && courseResponse.data) {
+              setCourseStructure(courseResponse.data);
           } else {
             console.warn('Could not get course structure:', courseResponse.error);
             setCourseStructure({ title: 'Unknown Course', sections: [] }); // Set an empty structure to indicate no data
@@ -305,8 +320,8 @@ export const TranscriptExtractorPopup = () => {
       return;
     }
 
-    // If we already have a successful extraction, just re-export
-    if (extractionStatus === 'success' && extractedTranscript) {
+    // If we already have a successful extraction with valid transcript, just re-export
+    if (extractionStatus === 'success' && extractedTranscript && extractedTranscript.trim().length > 0) {
       try {
         await handleExport(extractedTranscript);
         setErrorMessage(''); // Clear any previous errors
@@ -340,46 +355,7 @@ export const TranscriptExtractorPopup = () => {
     }
   };
 
-  const handleTestSelectors = async () => {
-    console.log('🎯 Test selectors button clicked!');
-    setIsTestingSelectors(true);
-    try {
-      console.log('🎯 Calling ExtensionService.testSelectors()...');
-      const response = await ExtensionService.testSelectors();
-      console.log('🎯 Response received:', response);
-      if (response.success) {
-        console.log('🎯 Selector testing completed - check browser console for results');
-        // You could show a success message here
-      } else {
-        console.error('Failed to test selectors:', response.error);
-      }
-    } catch (error) {
-      console.error('Error testing selectors:', error);
-    } finally {
-      setIsTestingSelectors(false);
-    }
-  };
-
-  const handleTestCourseStructure = async () => {
-    console.log('🎯 Test course structure button clicked!');
-    setIsTestingCourseStructure(true);
-    
-    try {
-      console.log('🎯 Calling ExtensionService.testCourseStructure()...');
-      const response = await ExtensionService.testCourseStructure();
-      console.log('🎯 Response received:', response);
-      
-      if (response.success) {
-        console.log('🎯 Course structure testing completed successfully');
-      } else {
-        console.error('🎯 Failed to test course structure:', response.error);
-      }
-    } catch (error) {
-      console.error('🎯 Error testing course structure:', error);
-    } finally {
-      setIsTestingCourseStructure(false);
-    }
-  };
+  // Test functions removed for production
 
   const handleExport = async (transcript: string) => {
     const formattedTranscript = ExtensionService.formatTranscript(
@@ -477,27 +453,44 @@ export const TranscriptExtractorPopup = () => {
     setBatchProgress({});
     setErrorMessage('');
     
-    // Simple approach: use the actual section count from the course
+    // Use actual course structure to determine total sections
     try {
-      console.log('🎯 Setting up section counting...');
-      // Based on your logs, you have 63 sections
-      const totalSections = 63;
-      console.log('🎯 Using total sections:', totalSections);
-      
-      // Reset all counters to ensure clean start
-      setBatchStats({ total: totalSections, completed: 0, failed: 0, skipped: 0 });
-      setBatchProgress({});
-      console.log('🎯 Reset batch stats to zero');
+      // Get the actual course structure to determine total sections
+      const courseResponse = await ExtensionService.extractCourseStructure();
+      if (courseResponse.success && courseResponse.data && courseResponse.data.sections) {
+        const totalSections = courseResponse.data.sections.length;
+        console.log('🎯 Using actual course structure - total sections:', totalSections);
+        
+        // Reset all counters to ensure clean start
+        setBatchStats({ total: totalSections, completed: 0, failed: 0, skipped: 0 });
+        setBatchProgress({});
+        console.log('🎯 Reset batch stats to zero');
+        
+        // Initialize current section
+        const initialSection = getCurrentSectionNumber();
+        setCurrentSection(initialSection.toString());
+        console.log('🎯 Batch collection started with total sections:', totalSections, 'starting from section:', initialSection);
+      } else {
+        // Fallback to dynamic counting if course structure not available
+        console.log('🎯 Course structure not available, using dynamic counting');
+        setBatchStats({ total: 0, completed: 0, failed: 0, skipped: 0 });
+        setBatchProgress({});
+        
+        // Initialize current section
+        const initialSection = getCurrentSectionNumber();
+        setCurrentSection(initialSection.toString());
+        console.log('🎯 Batch collection started with dynamic counting, starting from section:', initialSection);
+      }
     } catch (error) {
       console.log('🎯 Error setting up section counting, using dynamic counting:', error);
       setBatchStats({ total: 0, completed: 0, failed: 0, skipped: 0 });
       setBatchProgress({});
+      
+      // Initialize current section
+      const initialSection = getCurrentSectionNumber();
+      setCurrentSection(initialSection.toString());
+      console.log('🎯 Batch collection started with error fallback, starting from section:', initialSection);
     }
-    
-    // Initialize current section
-    const initialSection = getCurrentSectionNumber();
-    setCurrentSection(initialSection.toString());
-    console.log('🎯 Batch collection started with total sections:', batchStats.total, 'starting from section:', initialSection);
   };
 
   const handleNextOrCollect = async () => {
@@ -723,7 +716,10 @@ export const TranscriptExtractorPopup = () => {
           {/* Simple Progress Bar - Always show when batch collecting */}
           <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
             <div className="flex justify-between items-center text-sm mb-3">
-              <span className="text-blue-900 dark:text-blue-100 font-medium">Batch Collection Active</span>
+              <div className="flex items-center gap-2">
+                <LogIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span className="text-blue-900 dark:text-blue-100 font-medium">Batch Collection Active</span>
+              </div>
               <span className="text-blue-700 dark:text-blue-300">
                 {batchStats.total > 0 ? `${batchStats.completed}/${batchStats.total} sections` : `${batchStats.completed} sections processed`}
               </span>
@@ -789,8 +785,10 @@ export const TranscriptExtractorPopup = () => {
                   </span>
                 )}
               </div>
-              
-
+              <div className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
+                <LogIcon className="w-3 h-3" />
+                <span>Log</span>
+              </div>
             </div>
           )}
 
@@ -836,9 +834,10 @@ export const TranscriptExtractorPopup = () => {
                     setErrorMessage('Failed to download batch transcripts');
                   }
                 }}
-                className="flex-1 py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors"
+                className="flex-1 py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
               >
-                📥 Export All ({clipboardEntries})
+                <LogIcon className="w-4 h-4" />
+                Export All ({clipboardEntries})
               </button>
               <button
                 onClick={async () => {
@@ -880,55 +879,19 @@ export const TranscriptExtractorPopup = () => {
             </div>
           ) : (
             <div className="flex items-center justify-center gap-2">
-            <Play className="w-5 h-5" />
-              <span>{extractionStatus === 'success' && extractedTranscript ? 'Copy Again' : 'Extract Transcript'}</span>
+                         <LogIcon className="w-6 h-6" />
+              <span>{extractionStatus === 'success' && extractedTranscript && extractedTranscript.trim().length > 0 ? 'Copy Again' : 'Extract Transcript'}</span>
             </div>
           )}
         </button>
         
-        <button 
-          onClick={handleTestSelectors} 
-          disabled={isTestingSelectors}
-          className="px-4 py-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
-          title="Test all selectors to find which ones work"
-        >
-          {isTestingSelectors ? (
-            <div className="flex items-center justify-center gap-2">
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              <span>Testing...</span>
-            </div>
-          ) : (
-            <TestTube className="w-5 h-5" />
-          )}
-        </button>
-        
-        <button 
-          onClick={handleTestCourseStructure} 
-          disabled={isTestingCourseStructure}
-          className="px-4 py-4 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
-          title="Test course structure selectors"
-        >
-          {isTestingCourseStructure ? (
-            <div className="flex items-center justify-center gap-2">
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              <span>Testing...</span>
-            </div>
-          ) : (
-            <FileText className="w-5 h-5" />
-          )}
-      </button>
+        {/* Test buttons removed for production */}
       </div>
 
       {/* Course Structure */}
-      {(() => {
-        console.log('🎯 Rendering course structure section, courseStructure:', courseStructure);
-        console.log('🎯 Course structure sections in render:', courseStructure?.sections);
-        console.log('🎯 Course structure sections length in render:', courseStructure?.sections?.length);
-        return null;
-      })()}
       <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-2 mb-3">
-          <FileText className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                      <LogIcon className="w-4 h-4 text-gray-600 dark:text-gray-400" />
           <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Course Structure</span>
         </div>
         {isCourseStructureLoading ? (
@@ -999,14 +962,14 @@ export const TranscriptExtractorPopup = () => {
             <ChevronDown className="w-4 h-4 text-gray-500" />
           </button>
           
-          {showFormatDropdown && <div className="absolute top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10">
-              {['markdown', 'txt', 'json'].map(format => <button key={format} onClick={() => {
-            setExportFormat(format as any);
-            setShowFormatDropdown(false);
-          }} className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg capitalize">
-                  <span>{format}</span>
-                </button>)}
-            </div>}
+                     {showFormatDropdown && <div className="absolute top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10">
+               {['markdown', 'txt', 'json', 'rag'].map(format => <button key={format} onClick={() => {
+             setExportFormat(format as 'markdown' | 'txt' | 'json' | 'rag');
+             setShowFormatDropdown(false);
+           }} className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg capitalize">
+                   <span>{format === 'rag' ? 'RAG' : format}</span>
+                 </button>)}
+             </div>}
         </div>
       </div>
 
@@ -1028,10 +991,10 @@ export const TranscriptExtractorPopup = () => {
   return <div className="w-[400px] h-[600px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
       {/* Header */}
       <header className="flex items-center justify-between p-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-[#4CAF50] rounded-lg">
-            <FileText className="w-4 h-4 text-white" />
-          </div>
+                 <div className="flex items-center space-x-3">
+                       <div className="p-1 bg-white rounded-lg shadow-sm border border-gray-200">
+              <LogIcon className="w-12 h-12" />
+            </div>
           <div>
             <h1 className="text-sm font-semibold text-gray-900 dark:text-white">
               <span>Transcript Extractor</span>

@@ -12,7 +12,7 @@ export interface ExtensionState {
   availability: { platform: string; hasTranscript: boolean; isCoursePage: boolean } | null;
   extractedTranscript: string;
   extractionStatus: 'idle' | 'extracting' | 'success' | 'error';
-  exportFormat: 'markdown' | 'txt' | 'json';
+  exportFormat: 'markdown' | 'txt' | 'json' | 'rag';
   exportTarget: 'clipboard' | 'download';
   includeTimestamps: boolean;
 }
@@ -30,6 +30,14 @@ export class StorageService {
       
       // Merge with new state
       const updatedState = { ...existingState, ...state };
+      
+      // Simple size check - if too big, clear old data
+      const size = JSON.stringify(updatedState).length;
+      if (size > 4000000) { // 4MB limit
+        // Clear old transcript data
+        updatedState.extractedTranscript = '';
+        updatedState.extractionStatus = 'idle';
+      }
       
       // Save to Chrome storage
       await chrome.storage.local.set({ [this.STORAGE_KEY]: updatedState });

@@ -42,6 +42,17 @@ const SELECTORS = {
 } as const;
 
 export class UdemyExtractor {
+  // Simple cleanup tracking for intervals
+  private static cleanupIntervals: NodeJS.Timeout[] = [];
+
+  /**
+   * Cleanup all intervals to prevent memory leaks
+   */
+  static cleanup() {
+    this.cleanupIntervals.forEach(interval => clearInterval(interval));
+    this.cleanupIntervals = [];
+  }
+
   /**
    * Extract course structure from Udemy page
    */
@@ -601,6 +612,7 @@ export class UdemyExtractor {
       
       // Set up periodic hover events to keep controls visible
       let hoverInterval: NodeJS.Timeout | undefined = setInterval(keepHoverActive, 1000); // Every 1 second
+      this.cleanupIntervals.push(hoverInterval); // Track for cleanup
       
       // Method 1: Try sidebar transcript panel (current UI)
       console.log('🎯 Method 1: Trying sidebar transcript panel...');
@@ -684,6 +696,8 @@ export class UdemyExtractor {
       
       // Clean up the hover interval
       clearInterval(hoverInterval);
+      // Remove from tracking array
+      this.cleanupIntervals = this.cleanupIntervals.filter(interval => interval !== hoverInterval);
       
       if (transcriptParts.length === 0) {
         throw new Error('No transcript content extracted - video may not have captions');

@@ -1,5 +1,15 @@
 import React from 'react';
-import { FileText, Sun, Moon } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
+
+// Custom LogIcon component using actual Log.png image
+const LogIcon = ({ className = "", ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
+  <img 
+    src="/Log.png" 
+    alt="Transcript Extractor Logo"
+    className={className}
+    {...props}
+  />
+);
 interface HeaderProps {
   isDarkMode: boolean;
   onThemeToggle: () => void;
@@ -13,9 +23,9 @@ export const Header = ({
   // @return
   return <header className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-700 border-b border-gray-200 dark:border-gray-600">
       <div className="flex items-center space-x-3">
-        <div className="p-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-          <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-        </div>
+                 <div className="p-1 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600">
+                      <LogIcon className="w-12 h-12" />
+         </div>
         <div>
           <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
             <span>Transcript Extractor</span>
