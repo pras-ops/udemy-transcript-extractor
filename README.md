@@ -197,13 +197,13 @@ We welcome contributions! Here's how you can help:
 
 ## 🔮 Roadmap
 
-### **Phase 1: Platform Expansion (Q2 2024)**
+### **Phase 1: Platform Expansion (Q4 2025)**
 - **Coursera** - Full transcript extraction support
 - **YouTube** - Educational video transcript collection
 - **edX** - Course transcript extraction
 - **Pluralsight** - Video transcript support
 
-### **Phase 2: Enhanced AI Integration (Q3 2024)**
+### **Phase 2: Enhanced AI Integration (Q4 2025)**
 - **Multi-Platform Batch Processing** - Collect from multiple platforms simultaneously
 - **AI Tool Presets** - Pre-configured formats for popular AI tools
 - **Direct Integration** - One-click export to specific AI platforms
@@ -247,7 +247,6 @@ This project is open source and available under the [MIT License](LICENSE).
 ## 📞 Support
 
 - **Issues** - Report bugs and request features on GitHub
-- **Discussions** - Join community discussions
 - **Email** - Contact us directly for support
 
 ---
