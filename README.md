@@ -134,31 +134,6 @@ Transcript Extractor - a one-click solution that extracts transcripts instantly 
 - Internet connection
 - Active Udemy account (for course access)
 
-## 🐛 Troubleshooting
-
-### **Common Issues**
-
-#### **Transcript Not Detected**
-- Ensure the transcript panel is open on Udemy
-- Refresh the page and try again
-- Check if the video has captions available
-
-#### **Extension Not Working**
-- Verify the extension is enabled in Chrome
-- Check browser console for error messages
-- Ensure you're on a supported Udemy course page
-
-#### **Batch Collection Issues**
-- Make sure you're on a course page (not individual video)
-- Check if batch collection is active
-- Verify you have access to all course videos
-
-### **Getting Help**
-- Check the browser console for error messages
-- Verify extension permissions in Chrome settings
-- Ensure the Udemy page is fully loaded
-- Contact support for additional assistance
-
 ## 🤝 Contributing
 
 We welcome contributions! Here's how you can help:
