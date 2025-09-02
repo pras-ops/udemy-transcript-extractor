@@ -117,9 +117,6 @@ Transcript Extractor - a one-click solution that extracts transcripts instantly 
 - 🔄 **Coursera** - Educational course transcripts
 - 🔄 **YouTube** - Educational video support
 - 🔄 **edX** - Course transcript extraction
-- 🔄 **Pluralsight** - Video transcript support
-- 🔄 **Skillshare** - Creative course transcripts
-- 🔄 **LinkedIn Learning** - Professional development content
 
 ## 🔧 Technical Details
 
@@ -179,7 +176,6 @@ We welcome contributions! Here's how you can help:
 - **Pluralsight** - Video transcript support
 
 ### **Phase 2: Enhanced AI Integration (Q4 2025)**
-- **Multi-Platform Batch Processing** - Collect from multiple platforms simultaneously
 - **AI Tool Presets** - Pre-configured formats for popular AI tools
 - **Direct Integration** - One-click export to specific AI platforms
 - **Advanced Formatting** - Custom formatting options for different use cases
