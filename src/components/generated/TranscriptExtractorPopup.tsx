@@ -314,20 +314,14 @@ export const TranscriptExtractorPopup = () => {
   };
 
   const handleExtractTranscript = async () => {
+    console.log('🎯 handleExtractTranscript called');
+    console.log('🎯 availability:', availability);
+    console.log('🎯 hasTranscript:', availability?.hasTranscript);
+    
     if (!availability?.hasTranscript) {
+      console.log('🎯 No transcript available, aborting');
       setErrorMessage('No transcript available for this video');
       setExtractionStatus('error');
-      return;
-    }
-
-    // If we already have a successful extraction with valid transcript, just re-export
-    if (extractionStatus === 'success' && extractedTranscript && extractedTranscript.trim().length > 0) {
-      try {
-        await handleExport(extractedTranscript);
-        setErrorMessage(''); // Clear any previous errors
-      } catch (error) {
-        setErrorMessage('Failed to export transcript');
-      }
       return;
     }
 
@@ -336,7 +330,9 @@ export const TranscriptExtractorPopup = () => {
     setErrorMessage('');
 
     try {
+      console.log('🎯 Calling ExtensionService.extractTranscript()...');
       const response = await ExtensionService.extractTranscript();
+      console.log('🎯 ExtensionService.extractTranscript() response:', response);
       if (response.success && response.data) {
         setExtractedTranscript(response.data);
         setExtractionStatus('success');
@@ -861,32 +857,28 @@ export const TranscriptExtractorPopup = () => {
         </div>
       )}
 
-      {/* Extract Button and Test Button */}
-      <div className="flex gap-2">
-        <button 
-          onClick={handleExtractTranscript} 
-          disabled={isExtracting || !availability?.hasTranscript} 
-          className={`flex-1 py-4 px-6 rounded-xl text-white font-medium transition-all duration-200 ${
-            isExtracting || !availability?.hasTranscript 
-              ? 'bg-gray-400 cursor-not-allowed' 
-              : 'bg-[#4CAF50] hover:bg-[#45a049] shadow-lg hover:shadow-xl'
-          }`}
-        >
-          {isExtracting ? (
-            <div className="flex items-center justify-center gap-2">
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            <span>Extracting...</span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center gap-2">
-                         <LogIcon className="w-6 h-6" />
-              <span>{extractionStatus === 'success' && extractedTranscript && extractedTranscript.trim().length > 0 ? 'Copy Again' : 'Extract Transcript'}</span>
-            </div>
-          )}
-        </button>
-        
-        {/* Test buttons removed for production */}
-      </div>
+      {/* Extract Button */}
+      <button 
+        onClick={handleExtractTranscript} 
+        disabled={isExtracting || !availability?.hasTranscript} 
+        className={`w-full py-4 px-6 rounded-xl text-white font-medium transition-all duration-200 ${
+          isExtracting || !availability?.hasTranscript 
+            ? 'bg-gray-400 cursor-not-allowed' 
+            : 'bg-[#4CAF50] hover:bg-[#45a049] shadow-lg hover:shadow-xl'
+        }`}
+      >
+        {isExtracting ? (
+          <div className="flex items-center justify-center gap-2">
+          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+          <span>Extracting...</span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center gap-2">
+                       <LogIcon className="w-6 h-6" />
+            <span>Extract Transcript</span>
+          </div>
+        )}
+      </button>
 
       {/* Course Structure */}
       <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">

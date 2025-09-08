@@ -118,12 +118,6 @@ export class ExtensionService {
     return this.sendMessage({ type: 'EXTRACT_TRANSCRIPT' });
   }
 
-  /**
-   * Test all selectors to find which ones work
-   */
-  static async testSelectors(): Promise<ExtensionServiceResponse<string>> {
-    return this.sendMessage({ type: 'TEST_SELECTORS' });
-  }
 
   static async testCourseStructure(): Promise<ExtensionServiceResponse<string>> {
     return this.sendMessage({ type: 'TEST_COURSE_STRUCTURE' });
@@ -236,13 +230,10 @@ export class ExtensionService {
   private static formatAsRAG(transcript: string, includeTimestamps: boolean): string {
     const lines = transcript.split('\n\n');
     
-    // Clean and merge lines into larger chunks (3-5 lines per chunk)
-    const chunks: string[] = [];
-    let currentChunk = '';
-    let chunkCount = 0;
-    const maxLinesPerChunk = 4; // Keep it simple - 4 lines per chunk
+    // Clean and prepare transcript lines
+    const cleanLines: string[] = [];
     
-    lines.forEach((line, index) => {
+    lines.forEach((line) => {
       let text = line;
       let timestamp = '';
       
@@ -273,34 +264,24 @@ export class ExtensionService {
       // Clean text (remove artifacts, extra spaces)
       text = text.trim().replace(/\s+/g, ' ');
       
-      // Skip empty or very short lines
-      if (!text || text.length < 10) return;
-      
-      // Add to current chunk
-      if (currentChunk) {
-        currentChunk += ' ' + text;
-      } else {
-        currentChunk = text;
-      }
-      
-      // Create chunk when we have enough lines or reach end
-      if ((index + 1) % maxLinesPerChunk === 0 || index === lines.length - 1) {
-        if (currentChunk.trim()) {
-          chunks.push(currentChunk.trim());
-          chunkCount++;
-        }
-        currentChunk = '';
+      // Skip empty or very short lines, but keep meaningful content
+      if (text && text.length >= 3 && /[a-zA-Z]/.test(text)) {
+        cleanLines.push(text);
       }
     });
     
-    // Create simple RAG format with fewer, larger chunks
+    // Smart chunking: merge lines until we reach target word count (50-60 words)
+    const chunks = this.createSmartChunks(cleanLines, 55); // Target 55 words per chunk
+    
+    // Create RAG format with optimized chunks
     const ragChunks = chunks.map((chunk, index) => ({
       id: `chunk_${index + 1}`,
       content: chunk,
       metadata: {
         chunk_index: index + 1,
         source: 'video_transcript',
-        type: 'educational_content'
+        type: 'educational_content',
+        word_count: chunk.split(/\s+/).length
       }
     }));
     
@@ -310,11 +291,66 @@ export class ExtensionService {
       chunks: ragChunks,
       metadata: {
         extraction_date: new Date().toISOString(),
-        format_version: '2.0',
+        format_version: '2.1',
         rag_optimized: true,
-        chunking_strategy: 'simple_merge'
+        chunking_strategy: 'smart_word_based',
+        target_words_per_chunk: 55,
+        total_words: cleanLines.join(' ').split(/\s+/).length
       }
     }, null, 2);
+  }
+
+  /**
+   * Create smart chunks based on word count, not line count
+   * Merges small transcript segments into coherent 50-60 word chunks
+   */
+  private static createSmartChunks(lines: string[], targetWords: number): string[] {
+    const chunks: string[] = [];
+    let currentChunk: string[] = [];
+    let currentWordCount = 0;
+    
+    for (const line of lines) {
+      const words = line.split(/\s+/);
+      const lineWordCount = words.length;
+      
+      // If adding this line would exceed target, finalize current chunk
+      if (currentWordCount + lineWordCount > targetWords && currentChunk.length > 0) {
+        chunks.push(currentChunk.join(' '));
+        currentChunk = [line];
+        currentWordCount = lineWordCount;
+      } else {
+        // Add line to current chunk
+        currentChunk.push(line);
+        currentWordCount += lineWordCount;
+      }
+    }
+    
+    // Add final chunk if it has content
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk.join(' '));
+    }
+    
+    // Post-process: merge very small chunks with previous ones
+    const finalChunks: string[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const wordCount = chunk.split(/\s+/).length;
+      
+      // If chunk is too small (less than 20 words) and not the last chunk
+      if (wordCount < 20 && i < chunks.length - 1) {
+        // Merge with next chunk
+        if (i + 1 < chunks.length) {
+          finalChunks.push(chunk + ' ' + chunks[i + 1]);
+          i++; // Skip next chunk since we merged it
+        } else {
+          finalChunks.push(chunk);
+        }
+      } else {
+        finalChunks.push(chunk);
+      }
+    }
+    
+    return finalChunks;
   }
 
   /**

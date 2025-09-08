@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Transcript Extractor",
-  "version": "1.0.1",
+  "version": "3.0.0",
   "description": "Extract transcripts from educational platforms like Udemy, Coursera, YouTube, and more",
   "permissions": [
     "activeTab",
@@ -13,6 +13,8 @@
     "https://*.udemy.com/*",
     "https://*.coursera.org/*",
     "https://*.youtube.com/*",
+    "https://www.youtube.com/*",
+    "https://video.google.com/*",
     "https://*.edx.org/*",
     "https://*.pluralsight.com/*"
   ],
@@ -30,7 +32,7 @@
         "https://*.pluralsight.com/*"
       ],
       "js": ["content-script.js"],
-      "run_at": "document_end"
+      "run_at": "document_idle"
     }
   ],
   "background": {

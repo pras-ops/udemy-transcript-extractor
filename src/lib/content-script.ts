@@ -1,18 +1,19 @@
 // Content Script for Transcript Extractor Extension - v3.0.0
 // This script runs in the context of web pages
 
-console.log('🎯 NEW Content Script v3.0.0 starting to load...');
-
-// Test if we can access DOM
-console.log('🎯 DOM test - document ready state:', document.readyState);
-console.log('🎯 DOM test - current URL:', window.location.href);
-
-// Import UdemyExtractor - this will be bundled into the content script
+// Import extractors - these will be bundled into the content script
 import { UdemyExtractor } from './udemy-extractor';
+import { YouTubeExtractor } from './youtube-extractor';
 
-// Fallback: if import fails, create a minimal UdemyExtractor
+// Chrome extension types
+declare const chrome: any;
+
+// Fallback: if imports fail, create minimal extractors
 if (typeof UdemyExtractor === 'undefined') {
   console.error('🎯 UdemyExtractor import failed, creating fallback');
+}
+if (typeof YouTubeExtractor === 'undefined') {
+  console.error('🎯 YouTubeExtractor import failed, creating fallback');
 }
 
 // Extend window interface for TypeScript
@@ -24,7 +25,7 @@ declare global {
 
 // Message types for communication with popup
 export interface ContentScriptMessage {
-  type: 'EXTRACT_COURSE_STRUCTURE' | 'EXTRACT_TRANSCRIPT' | 'GET_VIDEO_INFO' | 'CHECK_AVAILABILITY' | 'START_BATCH_COLLECTION' | 'NAVIGATE_TO_NEXT_LECTURE' | 'COLLECT_CURRENT_TRANSCRIPT' | 'EXPORT_BATCH_TRANSCRIPTS';
+  type: 'EXTRACT_COURSE_STRUCTURE' | 'EXTRACT_TRANSCRIPT' | 'GET_VIDEO_INFO' | 'CHECK_AVAILABILITY' | 'START_BATCH_COLLECTION' | 'NAVIGATE_TO_NEXT_LECTURE' | 'COLLECT_CURRENT_TRANSCRIPT' | 'EXPORT_BATCH_TRANSCRIPTS' | 'TEST_COURSE_STRUCTURE';
   data?: any;
 }
 
@@ -67,8 +68,8 @@ class ContentScript {
           this.handleMessage(message, sendResponse);
           return true; // Keep message channel open for async response
         } catch (error) {
-          console.error('🎯 Error handling message:', error);
-          sendResponse({ success: false, error: error.message });
+          console.error('Error handling message:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
           return true;
         }
       });
@@ -80,13 +81,12 @@ class ContentScript {
       // Override any existing content script
       window.transcriptExtractorContentScript = this;
     } catch (error) {
-      console.error('🎯 Error initializing content script:', error);
+      console.error('Error initializing content script:', error);
     }
   }
 
   private async handleMessage(message: ContentScriptMessage, sendResponse: (response: ContentScriptResponse) => void) {
     try {
-      console.log('🎯 Handling message type:', message.type);
       
       switch (message.type) {
         case 'EXTRACT_COURSE_STRUCTURE':
@@ -97,10 +97,6 @@ class ContentScript {
         case 'EXTRACT_TRANSCRIPT':
           const transcript = await this.extractTranscript();
           sendResponse({ success: true, data: transcript });
-          break;
-        case 'TEST_SELECTORS':
-          UdemyExtractor.testAllSelectors();
-          sendResponse({ success: true, data: 'Selector testing completed - check console' });
           break;
 
         case 'TEST_COURSE_STRUCTURE':
@@ -143,7 +139,7 @@ class ContentScript {
       }
     } catch (error) {
       console.error('Content script error:', error);
-      sendResponse({ success: false, error: error.message });
+      sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
     }
   }
 
@@ -152,39 +148,115 @@ class ContentScript {
       return UdemyExtractor.extractCourseStructure();
     }
     
-    // Add support for other platforms here
+    if (YouTubeExtractor.isYouTubeVideoPage()) {
+      // Try to extract playlist first
+      const playlist = YouTubeExtractor.extractPlaylist();
+      if (playlist && playlist.videos.length > 0) {
+        
+        // Convert playlist to course structure format
+        const lectures = playlist.videos.map(video => ({
+          id: video.videoId,
+          title: video.title,
+          url: video.url,
+          isCompleted: false,
+          duration: video.duration || 'Unknown',
+          isCurrentVideo: video.isCurrentVideo
+        }));
+
+        // Find current video
+        const currentVideo = playlist.videos.find(video => video.isCurrentVideo) || playlist.videos[0];
+        
+        return {
+          title: playlist.title,
+          instructor: 'YouTube Creator',
+          sections: [{
+            title: 'Playlist Videos',
+            lectures: lectures
+          }],
+          currentLecture: {
+            id: currentVideo.videoId,
+            title: currentVideo.title,
+            url: currentVideo.url,
+            isCompleted: false,
+            duration: currentVideo.duration || 'Unknown'
+          }
+        };
+      }
+      
+      // Fallback: if no playlist found, return single video structure
+      const videoInfo = YouTubeExtractor.getCurrentVideoInfo();
+      if (videoInfo) {
+        return {
+          title: videoInfo.title,
+          instructor: 'YouTube Creator',
+          sections: [{
+            title: 'Video',
+            lectures: [{
+              id: videoInfo.videoId,
+              title: videoInfo.title,
+              url: videoInfo.url,
+              isCompleted: false,
+              duration: 'Unknown'
+            }]
+          }],
+          currentLecture: {
+            id: videoInfo.videoId,
+            title: videoInfo.title,
+            url: videoInfo.url,
+            isCompleted: false,
+            duration: 'Unknown'
+          }
+        };
+      }
+    }
+    
     throw new Error('Unsupported platform');
   }
 
   private async extractTranscript() {
-    console.log('🎯 Content script extractTranscript called');
-    if (UdemyExtractor.isUdemyCoursePage()) {
+    
+    const isUdemy = UdemyExtractor.isUdemyCoursePage();
+    const isYouTube = YouTubeExtractor.isYouTubeVideoPage();
+    
+    if (isUdemy) {
       try {
         const result = await UdemyExtractor.extractTranscript();
-        console.log('🎯 UdemyExtractor.extractTranscript result:', result ? `Length: ${result.length}` : 'null/empty');
         
         // Copy to clipboard using enhanced method
         if (result && result.trim().length > 0) {
           try {
-            const clipboardSuccess = await this.copyToClipboard(result);
-            if (clipboardSuccess) {
-              console.log('🎯 Successfully copied transcript to clipboard');
-            } else {
-              console.warn('🎯 Failed to copy transcript to clipboard');
-            }
+            await this.copyToClipboard(result);
           } catch (clipboardError) {
-            console.error('🎯 Clipboard copy failed:', clipboardError);
+            console.error('Clipboard copy failed:', clipboardError);
           }
         }
         
         return result;
       } catch (error) {
-        console.error('🎯 Error in UdemyExtractor.extractTranscript:', error);
+        console.error('Udemy extractor error:', error);
         throw error;
       }
     }
     
-    // Add support for other platforms here
+    if (isYouTube) {
+      try {
+        const result = await YouTubeExtractor.extractTranscript();
+        
+        if (result && result.trim().length > 0) {
+          try {
+            await this.copyToClipboard(result);
+          } catch (clipboardError) {
+            console.error('Clipboard copy failed:', clipboardError);
+          }
+        }
+        
+        return result;
+      } catch (error) {
+        console.error('YouTube extractor error:', error);
+        throw error;
+      }
+    }
+    
     throw new Error('Unsupported platform');
   }
 
@@ -193,11 +265,18 @@ class ContentScript {
       return UdemyExtractor.getCurrentVideoInfo();
     }
     
+    if (YouTubeExtractor.isYouTubeVideoPage()) {
+      return YouTubeExtractor.getCurrentVideoInfo();
+    }
+    
     return null;
   }
 
   private checkAvailability() {
-    if (UdemyExtractor.isUdemyCoursePage()) {
+    
+    const isUdemy = UdemyExtractor.isUdemyCoursePage();
+    
+    if (isUdemy) {
       return {
         platform: 'udemy',
         hasTranscript: UdemyExtractor.isTranscriptAvailable(),
@@ -205,6 +284,15 @@ class ContentScript {
       };
     }
     
+    const isYouTube = YouTubeExtractor.isYouTubeVideoPage();
+    
+    if (isYouTube) {
+      return {
+        platform: 'youtube',
+        hasTranscript: YouTubeExtractor.isTranscriptAvailable(),
+        isCoursePage: true
+      };
+    }
     return {
       platform: 'unknown',
       hasTranscript: false,
@@ -249,7 +337,7 @@ class ContentScript {
       
       for (const selector of selectors) {
         const button = document.querySelector(selector);
-        if (button && button.offsetParent !== null) { // visible check
+        if (button && (button as HTMLElement).offsetParent !== null) { // visible check
           nextButton = button;
           console.log('🎯 Found Next button with selector:', selector);
           break;
@@ -264,7 +352,7 @@ class ContentScript {
           const textContent = button.textContent?.toLowerCase() || '';
           
           if ((ariaLabel.includes('next') || textContent.includes('next')) && 
-              button.offsetParent !== null) { // visible check
+              (button as HTMLElement).offsetParent !== null) { // visible check
             nextButton = button;
             console.log('🎯 Found Next button by text/aria-label:', button);
             break;
@@ -448,9 +536,22 @@ class ContentScript {
 
   private async copyToClipboard(text: string): Promise<boolean> {
     try {
+      console.log('🎯 Copying to clipboard, text length:', text.length);
+      
+      // Clear clipboard first
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText('');
+          console.log('🎯 Cleared clipboard');
+        }
+      } catch (clearError) {
+        console.log('🎯 Could not clear clipboard:', clearError);
+      }
+
       // Method 1: Modern Clipboard API
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
+        console.log('🎯 Successfully copied to clipboard using modern API');
         return true;
       }
     } catch (error) {
@@ -471,6 +572,7 @@ class ContentScript {
       const success = document.execCommand('copy');
       document.body.removeChild(textarea);
       
+      console.log('🎯 Fallback clipboard copy result:', success);
       return success;
     } catch (error) {
       console.error('🎯 All clipboard methods failed:', error);
