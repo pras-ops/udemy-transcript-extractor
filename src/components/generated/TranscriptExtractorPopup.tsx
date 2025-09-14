@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { useState, useEffect, useMemo } from 'react';
-import { FileText, Sun, Moon, Download, ChevronDown, Clock, Clipboard, Play, Lock, Github, Zap, AlertCircle, CheckCircle } from 'lucide-react';
+import { FileText, Sun, Moon, Download, ChevronDown, Clock, Clipboard, Play, Lock, Github, Zap, AlertCircle, CheckCircle, Sparkles } from 'lucide-react';
 import { ExtensionService } from '../../lib/extension-service';
 import { StorageService } from '../../lib/storage-service';
+import { AISummarizationPopup } from './AISummarizationPopup';
 
 // Simple debouncing utility
 const debounce = (func: Function, wait: number) => {
@@ -54,6 +55,10 @@ export const TranscriptExtractorPopup = () => {
   const [progressUpdateTrigger, setProgressUpdateTrigger] = useState(0);
   const [clipboardEntries, setClipboardEntries] = useState(0);
   const [clipboardData, setClipboardData] = useState<string>('');
+  
+  // AI Summarization states
+  const [showAIPopup, setShowAIPopup] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string>('');
   
   const handleThemeToggle = () => {
     setIsDarkMode(!isDarkMode);
@@ -349,6 +354,23 @@ export const TranscriptExtractorPopup = () => {
     } finally {
       setIsExtracting(false);
     }
+  };
+
+  // AI Summarization handlers
+  const handleAISummarize = () => {
+    if (!extractedTranscript || extractedTranscript.trim().length === 0) {
+      setErrorMessage('Please extract a transcript first before generating an AI summary');
+      return;
+    }
+    setShowAIPopup(true);
+  };
+
+  const handleAISummaryGenerated = (summary: string) => {
+    setAiSummary(summary);
+  };
+
+  const handleCloseAIPopup = () => {
+    setShowAIPopup(false);
   };
 
   // Test functions removed for production
@@ -880,6 +902,19 @@ export const TranscriptExtractorPopup = () => {
         )}
       </button>
 
+      {/* AI Summarization Button */}
+      {extractionStatus === 'success' && extractedTranscript && (
+        <button 
+          onClick={handleAISummarize}
+          className="w-full py-3 px-6 rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
+        >
+          <div className="flex items-center justify-center gap-2">
+            <Sparkles className="w-5 h-5" />
+            <span>AI Summarize</span>
+          </div>
+        </button>
+      )}
+
       {/* Course Structure */}
       <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-2 mb-3">
@@ -980,7 +1015,9 @@ export const TranscriptExtractorPopup = () => {
     </div>;
 
 
-  return <div className="w-[400px] h-[600px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
+  return (
+    <>
+      <div className="w-[400px] h-[600px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
       {/* Header */}
       <header className="flex items-center justify-between p-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
                  <div className="flex items-center space-x-3">
@@ -1025,5 +1062,16 @@ export const TranscriptExtractorPopup = () => {
           <span>MIT License</span>
         </div>
       </footer>
-    </div>;
+      </div>
+
+      {/* AI Summarization Popup */}
+      {showAIPopup && (
+        <AISummarizationPopup
+          transcript={extractedTranscript}
+          onClose={handleCloseAIPopup}
+          onSummaryGenerated={handleAISummaryGenerated}
+        />
+      )}
+    </>
+  );
 };

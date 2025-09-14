@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { Copy, Download, Sparkles, Shield, Github, ChevronDown } from 'lucide-react';
+import { Copy, Download, Shield, Github, ChevronDown } from 'lucide-react';
 interface FooterProps {
   onCopyTranscript: () => void;
   onExport: (format: 'txt' | 'markdown' | 'json') => void;
-  onAISummarize: () => void;
   disabled?: boolean;
 }
 
@@ -11,16 +10,9 @@ interface FooterProps {
 export const Footer = ({
   onCopyTranscript,
   onExport,
-  onAISummarize,
   disabled = false
 }: FooterProps) => {
   const [showExportDropdown, setShowExportDropdown] = useState(false);
-  const [isAILoading, setIsAILoading] = useState(false);
-  const handleAISummarize = async () => {
-    setIsAILoading(true);
-    await onAISummarize();
-    setTimeout(() => setIsAILoading(false), 2000);
-  };
   const handleExport = (format: 'txt' | 'markdown' | 'json') => {
     onExport(format);
     setShowExportDropdown(false);
@@ -54,11 +46,6 @@ export const Footer = ({
                 </button>
               </div>}
           </div>
-          
-          <button onClick={handleAISummarize} disabled={isAILoading || disabled} className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 text-sm font-medium ${disabled ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed' : isAILoading ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-white cursor-not-allowed' : 'bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white'}`}>
-            <Sparkles className={`w-4 h-4 ${isAILoading ? 'animate-spin' : ''}`} />
-            <span>{isAILoading ? 'Processing...' : 'AI Summary'}</span>
-          </button>
         </div>
         
         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">

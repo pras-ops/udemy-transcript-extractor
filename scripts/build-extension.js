@@ -27,6 +27,14 @@ async function buildExtension() {
   fs.copyFileSync(backgroundPath, distBackgroundPath);
   console.log('✓ Copied background.js');
 
+  // Copy service worker for WebLLM
+  const swPath = path.join(__dirname, '../public/sw.ts');
+  const distSwPath = path.join(distDir, 'sw.js');
+  if (fs.existsSync(swPath)) {
+    fs.copyFileSync(swPath, distSwPath);
+    console.log('✓ Copied service worker (sw.js)');
+  }
+
   // Copy icons (if they exist)
   const iconsDir = path.join(__dirname, '../public/icons');
   const distIconsDir = path.join(distDir, 'icons');

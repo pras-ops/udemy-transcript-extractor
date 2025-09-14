@@ -40,8 +40,8 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["udemy-extractor.js"],
-      "matches": ["https://*.udemy.com/*"]
+      "resources": ["sw.js", "udemy-extractor.js"],
+      "matches": ["https://*.udemy.com/*", "https://*.coursera.org/*", "https://*.youtube.com/*", "https://*.edx.org/*", "https://*.pluralsight.com/*"]
     }
   ]
 }
