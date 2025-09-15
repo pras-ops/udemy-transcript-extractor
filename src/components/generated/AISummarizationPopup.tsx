@@ -36,9 +36,8 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
     maxLength: 150,
     minLength: 50,
     useWebLLM: true,
-    adaptiveMode: true,
-    adaptivePercentage: 50,
-    maxAdaptiveLength: 500
+    compressionPercentage: 60, // Default: retain 60% of original
+    maxLengthCap: 1000
   });
   const [showSettings, setShowSettings] = useState(false);
   const [availableEngines, setAvailableEngines] = useState<{ webllm: boolean; transformers: boolean; mock: boolean }>({
@@ -50,10 +49,35 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
   const [wordCountInfo, setWordCountInfo] = useState<{
     original: number;
     summary: number;
-    adaptive?: number;
+    target?: number;
+    compressionRatio?: number;
   } | null>(null);
 
+  // Load saved settings from storage
+  const loadSavedSettings = async () => {
+    try {
+      const result = await chrome.storage.local.get(['aiSummarizationSettings']);
+      if (result.aiSummarizationSettings) {
+        setOptions(result.aiSummarizationSettings);
+      }
+    } catch (error) {
+      console.log('Could not load saved settings, using defaults');
+    }
+  };
+
+  // Save settings to storage
+  const saveSettings = async (newOptions: SummarizationOptions) => {
+    try {
+      await chrome.storage.local.set({ aiSummarizationSettings: newOptions });
+    } catch (error) {
+      console.log('Could not save settings');
+    }
+  };
+
   useEffect(() => {
+    // Load saved settings first
+    loadSavedSettings();
+    
     // Check available engines on mount
     const engines = aiSummarizationService.getAvailableEngines();
     setAvailableEngines(engines);
@@ -61,10 +85,23 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
     // Get setup instructions
     const instructions = aiSummarizationService.getSetupInstructions();
     setSetupInstructions(instructions);
-    
-    // Auto-start summarization if transcript is provided
+  }, []);
+
+  // Auto-start summarization when transcript is provided
+  useEffect(() => {
     if (transcript && transcript.trim().length > 0) {
-      handleSummarize();
+      // Clear previous results when transcript changes
+      setSummary('');
+      setError('');
+      setEngine(null);
+      setWordCountInfo(null);
+      
+      // Auto-start summarization after a short delay to allow settings to load
+      const timer = setTimeout(() => {
+        handleSummarize();
+      }, 500);
+      
+      return () => clearTimeout(timer);
     }
   }, [transcript]);
 
@@ -93,7 +130,8 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
           setWordCountInfo({
             original: result.originalWordCount,
             summary: result.summaryWordCount,
-            adaptive: result.adaptiveLength
+            target: result.targetLength,
+            compressionRatio: result.compressionRatio
           });
         }
         
@@ -204,131 +242,98 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
               Summarization Settings
             </h3>
             <div className="space-y-4">
-              {/* Adaptive Mode Toggle */}
-              <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                <div className="flex items-center gap-3">
+              {/* Compression Percentage */}
+              <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div className="flex items-center gap-3 mb-3">
                   <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
                     <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-900 dark:text-white">
-                      Adaptive Mode
+                      Compression Level
                     </label>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Auto-calculate length based on original
+                      How much of original text to retain
                     </p>
                   </div>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={options.adaptiveMode}
-                    onChange={(e) => setOptions(prev => ({ ...prev, adaptiveMode: e.target.checked }))}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-
-              {/* Adaptive Percentage */}
-              {options.adaptiveMode && (
-                <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                        <span className="text-green-600 dark:text-green-400 text-xs font-bold">%</span>
-                      </div>
-                      <label className="text-sm font-medium text-gray-900 dark:text-white">
-                        Summary Length (% of original)
-                      </label>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Retain {options.compressionPercentage}% of original
                     </div>
                     <div className="text-sm font-bold text-blue-600 dark:text-blue-400">
-                      {options.adaptivePercentage}%
+                      {options.compressionPercentage}%
                     </div>
                   </div>
                   <input
                     type="range"
-                    value={options.adaptivePercentage}
-                    onChange={(e) => setOptions(prev => ({ ...prev, adaptivePercentage: parseInt(e.target.value) }))}
+                    value={options.compressionPercentage}
+                    onChange={(e) => {
+                      const newOptions = { ...options, compressionPercentage: parseInt(e.target.value) };
+                      setOptions(newOptions);
+                      saveSettings(newOptions);
+                    }}
                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-                    min="10"
-                    max="100"
+                    min="30"
+                    max="90"
                     style={{
-                      background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${options.adaptivePercentage}%, #e5e7eb ${options.adaptivePercentage}%, #e5e7eb 100%)`
+                      background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((options.compressionPercentage - 30) / 60) * 100}%, #e5e7eb ${((options.compressionPercentage - 30) / 60) * 100}%, #e5e7eb 100%)`
                     }}
                   />
-                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    <span>10%</span>
-                    <span>100%</span>
+                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                    <span>30% (Condensed)</span>
+                    <span>90% (Detailed)</span>
                   </div>
                 </div>
-              )}
+              </div>
 
-              {/* Max Adaptive Length Cap */}
-              {options.adaptiveMode && (
-                <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-                        <span className="text-orange-600 dark:text-orange-400 text-xs font-bold">MAX</span>
-                      </div>
-                      <label className="text-sm font-medium text-gray-900 dark:text-white">
-                        Max Length Cap (words)
-                      </label>
+
+              {/* Max Length Cap */}
+              <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                    <span className="text-orange-600 dark:text-orange-400 text-xs font-bold">MAX</span>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-900 dark:text-white">
+                      Maximum Length Cap
+                    </label>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Maximum words allowed in summary
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Cap at {options.maxLengthCap} words
                     </div>
                     <div className="text-sm font-bold text-orange-600 dark:text-orange-400">
-                      {options.maxAdaptiveLength}
+                      {options.maxLengthCap}
                     </div>
                   </div>
                   <input
                     type="range"
-                    value={options.maxAdaptiveLength}
-                    onChange={(e) => setOptions(prev => ({ ...prev, maxAdaptiveLength: parseInt(e.target.value) }))}
+                    value={options.maxLengthCap}
+                    onChange={(e) => {
+                      const newOptions = { ...options, maxLengthCap: parseInt(e.target.value) };
+                      setOptions(newOptions);
+                      saveSettings(newOptions);
+                    }}
                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-                    min="100"
-                    max="1000"
+                    min="200"
+                    max="2000"
                     style={{
-                      background: `linear-gradient(to right, #f97316 0%, #f97316 ${((options.maxAdaptiveLength - 100) / 900) * 100}%, #e5e7eb ${((options.maxAdaptiveLength - 100) / 900) * 100}%, #e5e7eb 100%)`
+                      background: `linear-gradient(to right, #f97316 0%, #f97316 ${((options.maxLengthCap - 200) / 1800) * 100}%, #e5e7eb ${((options.maxLengthCap - 200) / 1800) * 100}%, #e5e7eb 100%)`
                     }}
                   />
-                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    <span>100</span>
-                    <span>1000</span>
+                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                    <span>200 words</span>
+                    <span>2000 words</span>
                   </div>
                 </div>
-              )}
-
-              {/* Fixed Length Settings (when not in adaptive mode) */}
-              {!options.adaptiveMode && (
-                <>
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm text-gray-700 dark:text-gray-300">
-                      Max Length (words)
-                    </label>
-                    <input
-                      type="number"
-                      value={options.maxLength}
-                      onChange={(e) => setOptions(prev => ({ ...prev, maxLength: parseInt(e.target.value) || 150 }))}
-                      className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      min="50"
-                      max="500"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm text-gray-700 dark:text-gray-300">
-                      Min Length (words)
-                    </label>
-                    <input
-                      type="number"
-                      value={options.minLength}
-                      onChange={(e) => setOptions(prev => ({ ...prev, minLength: parseInt(e.target.value) || 50 }))}
-                      className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      min="20"
-                      max="200"
-                    />
-                  </div>
-                </>
-              )}
+              </div>
 
               {/* Engine Selection */}
               <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
@@ -350,7 +355,11 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
                     <input
                       type="checkbox"
                       checked={options.useWebLLM && availableEngines.webllm}
-                      onChange={(e) => setOptions(prev => ({ ...prev, useWebLLM: e.target.checked }))}
+                      onChange={(e) => {
+                        const newOptions = { ...options, useWebLLM: e.target.checked };
+                        setOptions(newOptions);
+                        saveSettings(newOptions);
+                      }}
                       disabled={!availableEngines.webllm}
                       className="sr-only peer"
                     />
@@ -369,7 +378,7 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
                   <Info className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
-                  <p><strong>Adaptive Mode:</strong> Automatically calculates summary length as {options.adaptivePercentage}% of original transcript</p>
+                  <p><strong>Compression Level:</strong> Retains {options.compressionPercentage}% of original transcript length</p>
                   <p><strong>WebLLM:</strong> {availableEngines.webllm ? 'Available (GPU accelerated)' : 'Not available (requires WebGPU)'}</p>
                   <p><strong>Transformers.js:</strong> {availableEngines.transformers ? 'Available (CPU)' : 'Not available (library not loaded)'}</p>
                   <p><strong>Basic Summary:</strong> Available (extractive summarization)</p>
@@ -464,26 +473,24 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
                             <span className="text-blue-600 dark:text-blue-400 text-xs font-bold">TARGET</span>
                           </div>
                           <span className="text-gray-700 dark:text-gray-300">
-                            {options.adaptiveMode && wordCountInfo.adaptive ? (
-                              <span>{wordCountInfo.adaptive} words ({options.adaptivePercentage}%)</span>
+                            {wordCountInfo.target ? (
+                              <span>{wordCountInfo.target} words ({options.compressionPercentage}% retention)</span>
                             ) : (
-                              <span>Fixed length mode</span>
+                              <span>Compression mode</span>
                             )}
                           </span>
                         </div>
                       </div>
-                      {options.adaptiveMode && (
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <div className="p-1 bg-green-100 dark:bg-green-900/30 rounded">
-                              <span className="text-green-600 dark:text-green-400 text-xs font-bold">RATIO</span>
-                            </div>
-                            <span className="text-gray-700 dark:text-gray-300 font-medium">
-                              {Math.round((wordCountInfo.summary / wordCountInfo.original) * 100)}% of original
-                            </span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <div className="p-1 bg-green-100 dark:bg-green-900/30 rounded">
+                            <span className="text-green-600 dark:text-green-400 text-xs font-bold">RATIO</span>
                           </div>
+                          <span className="text-gray-700 dark:text-gray-300 font-medium">
+                            {Math.round((wordCountInfo.summary / wordCountInfo.original) * 100)}% of original
+                          </span>
                         </div>
-                      )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -526,29 +533,92 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
             </div>
           ) : (
             <div className="space-y-8">
-              <div className="flex flex-col items-center justify-center py-12">
-                <div className="relative mb-8">
-                  <div className="w-20 h-20 bg-gradient-to-br from-purple-500 via-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-2xl">
-                    <Sparkles className="w-10 h-10 text-white" />
+              <div className="flex flex-col items-center justify-center py-8">
+                <div className="relative mb-6">
+                  <div className="w-16 h-16 bg-gradient-to-br from-purple-500 via-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-2xl">
+                    <Sparkles className="w-8 h-8 text-white" />
                   </div>
                   <div className="absolute -inset-2 bg-gradient-to-br from-purple-500 via-blue-500 to-indigo-600 rounded-full blur opacity-20 animate-pulse"></div>
                 </div>
-                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
-                  Ready to Summarize
-                </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-8 max-w-md">
-                  Click the button below to generate an intelligent summary of your transcript using local AI models.
-                </p>
-                <button
-                  onClick={handleSummarize}
-                  className="px-8 py-4 bg-gradient-to-r from-purple-500 via-blue-500 to-indigo-600 hover:from-purple-600 hover:via-blue-600 hover:to-indigo-700 text-white rounded-xl font-semibold transition-all duration-200 shadow-xl hover:shadow-2xl transform hover:scale-105"
-                >
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-5 h-5" />
-                    Generate Summary
-                  </div>
-                </button>
+                
+                {/* Generate Summary Button */}
+                {!summary && !isSummarizing && (
+                  <button
+                    onClick={handleSummarize}
+                    className="px-6 py-3 bg-gradient-to-r from-purple-500 via-blue-500 to-indigo-600 hover:from-purple-600 hover:via-blue-600 hover:to-indigo-700 text-white rounded-xl font-semibold transition-all duration-200 shadow-xl hover:shadow-2xl transform hover:scale-105"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4" />
+                      Generate Summary
+                    </div>
+                  </button>
+                )}
               </div>
+
+              {/* Summary Display */}
+              {summary && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg">
+                      <Sparkles className="w-4 h-4 text-white" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                      AI Summary
+                    </h3>
+                    {engine && (
+                      <div className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded-full">
+                        <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                          {engine === 'webllm' ? 'WebLLM' : engine === 'transformers' ? 'Transformers.js' : 'Basic'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                    <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                      {summary}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Error Display */}
+              {error && (
+                <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                      <span className="text-red-600 dark:text-red-400 text-lg">⚠️</span>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">
+                        Summarization Error
+                      </h4>
+                      <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                        {error}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Loading State */}
+              {isSummarizing && (
+                <div className="p-6 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200">
+                        Generating Summary...
+                      </h4>
+                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                        Processing transcript with AI models
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Setup Instructions */}
               {(!availableEngines.webllm && !availableEngines.transformers) && (

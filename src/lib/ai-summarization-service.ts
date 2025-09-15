@@ -2,9 +2,8 @@ export interface SummarizationOptions {
   maxLength?: number;
   minLength?: number;
   useWebLLM?: boolean;
-  adaptiveMode?: boolean;
-  adaptivePercentage?: number; // Percentage of original length (default: 50%)
-  maxAdaptiveLength?: number; // Cap for adaptive mode (default: 500)
+  compressionPercentage?: number; // How much of original to retain (default: 60%)
+  maxLengthCap?: number; // Maximum length cap (default: 1000)
 }
 
 export interface SummarizationResult {
@@ -14,7 +13,8 @@ export interface SummarizationResult {
   engine?: 'webllm' | 'transformers' | 'mock';
   originalWordCount?: number;
   summaryWordCount?: number;
-  adaptiveLength?: number;
+  targetLength?: number;
+  compressionRatio?: number;
 }
 
 class AISummarizationService {
@@ -56,28 +56,22 @@ class AISummarizationService {
       maxLength = 150,
       minLength = 50,
       useWebLLM = this.isWebLLMAvailable,
-      adaptiveMode = false,
-      adaptivePercentage = 50,
-      maxAdaptiveLength = 500
+      compressionPercentage = 60, // Default: retain 60% of original
+      maxLengthCap = 1000
     } = options;
 
     // Calculate original word count
     const originalWordCount = this.calculateWordCount(transcript);
     
-    // Determine target length based on mode
-    let targetLength: number;
-    let adaptiveLength: number | undefined;
+    // Calculate target length based on compression percentage
+    // compressionPercentage = how much of original to retain
+    const targetLength = Math.floor((originalWordCount * compressionPercentage) / 100);
     
-    if (adaptiveMode) {
-      // Calculate adaptive length (percentage of original)
-      adaptiveLength = Math.floor((originalWordCount * adaptivePercentage) / 100);
-      // Apply cap for performance
-      targetLength = Math.min(adaptiveLength, maxAdaptiveLength);
-      // Ensure minimum length
-      targetLength = Math.max(targetLength, minLength);
-    } else {
-      targetLength = maxLength;
-    }
+    // Apply maximum cap for performance
+    const finalTargetLength = Math.min(targetLength, maxLengthCap);
+    
+    // Ensure minimum length
+    const finalLength = Math.max(finalTargetLength, minLength);
 
     // Truncate transcript if too long (to avoid memory issues)
     const maxTranscriptLength = 4000; // ~4000 characters
@@ -86,12 +80,13 @@ class AISummarizationService {
       : transcript;
 
     // For now, return a mock implementation with instructions
-    const result = await this.generateMockSummary(truncatedTranscript, targetLength, minLength);
+    const result = await this.generateMockSummary(truncatedTranscript, finalLength, minLength);
     
     // Add word count information
     result.originalWordCount = originalWordCount;
     result.summaryWordCount = this.calculateWordCount(result.summary || '');
-    result.adaptiveLength = adaptiveLength;
+    result.targetLength = finalLength;
+    result.compressionRatio = compressionPercentage;
     
     return result;
   }

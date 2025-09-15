@@ -3,7 +3,7 @@
 A powerful Chrome extension that automatically extracts and collects transcripts from educational video platforms with **AI-powered summarization**. Built for AI enthusiasts who need quick access to educational content for tools like NotebookLLM, ChatGPT, and other AI platforms.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-blue?logo=google-chrome)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/version-3.1.0-green.svg)](https://github.com/your-username/transcript-extractor)
+[![Version](https://img.shields.io/badge/version-3.1.2-green.svg)](https://github.com/your-username/transcript-extractor)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![AI Powered](https://img.shields.io/badge/AI-Powered-purple?logo=openai)](https://github.com/your-username/transcript-extractor)
 
@@ -244,18 +244,21 @@ journey
 #### **AI Summarization Workflow:**
 1. Extract transcript from video
 2. Click "AI Summarize" button (appears after successful extraction)
-3. Choose AI engine and configure settings:
-   - **Adaptive Mode**: Auto-calculate length (50% of original, default)
-   - **Custom Percentage**: Adjust from 10% to 90% of original length
-   - **Max Length Cap**: Set performance limit (100-1000 words)
-   - **Engine Selection**: WebLLM (GPU) or Transformers.js (CPU)
-4. Generate intelligent summary locally
-5. View real-time statistics:
+3. **Auto-Generation**: Summary automatically starts generating
+4. Configure compression settings:
+   - **Compression Level**: 30% to 90% retention (default: 60%)
+   - **Max Length Cap**: 200 to 2000 words maximum
+   - **Example**: 1000 words → 600 words (60% retention)
+5. Select AI engine:
+   - **WebLLM** (GPU accelerated, fastest)
+   - **Transformers.js** (CPU processing, universal)
+   - **Basic Fallback** (always works, extractive)
+6. View real-time statistics:
    - Original word count
    - Summary word count
-   - Target length (adaptive mode)
+   - Target length (compression mode)
    - Compression ratio
-6. Copy summary or use for further AI processing
+7. Copy summary or use for further AI processing
 
 ## 🤖 AI Summarization Features
 
@@ -331,18 +334,19 @@ flowchart TD
   - Speed: 1-2 seconds for typical summaries
 
 ### **Smart Length Management**
-- **🎯 Adaptive Mode (Recommended)**: Automatically calculates optimal summary length
-  - Default: 50% of original transcript length
-  - Customizable: 10-90% of original (slider control)
-  - Performance cap: 500 words maximum (configurable)
-  - Smart: Adapts to any transcript size
-  - Example: 2000-word transcript → 1000-word summary (50%)
+- **📊 Compression Percentage System**: Intuitive control over summary length
+  - **Default**: 60% retention (1000 words → 600 words)
+  - **Range**: 30% to 90% retention (slider control)
+  - **30% (Condensed)**: Very short, key points only
+  - **60% (Balanced)**: Good detail with main concepts
+  - **90% (Detailed)**: Comprehensive, close to original
+  - **Smart Caps**: 200-2000 words maximum (configurable)
+  - **Real-time Preview**: See target length as you adjust
 
-- **⚙️ Fixed Mode**: Traditional min/max word limits
-  - Customizable minimum and maximum lengths
-  - Consistent output size regardless of input
-  - Best for: Standardized summary lengths
-  - Range: 50-1000 words
+- **🎯 Examples**:
+  - 1000 words at 50% → 500 words
+  - 2000 words at 70% → 1400 words
+  - 500 words at 80% → 400 words
 
 ### **Privacy & Security**
 - ✅ **100% Local Processing** - No data sent to external servers
@@ -486,15 +490,17 @@ We welcome contributions! Here's how you can help:
 
 ## 📊 Project Status
 
-### **Current Status: v3.1.0 Release**
+### **Current Status: v3.1.2 Release**
 - ✅ All core features working
 - ✅ AI summarization fully implemented
 - ✅ User-tested and refined
 - ✅ Clean, maintainable codebase
 - ✅ Comprehensive error handling
 - ✅ Multiple AI engines with fallbacks
-- ✅ Adaptive length control
+- ✅ **Compression percentage control** - Retain 30-90% of original text
 - ✅ Real-time statistics and monitoring
+- ✅ **Persistent user settings** - Your preferences are saved and remembered
+- ✅ **Auto-summarization** - Automatically generates summary when popup opens
 
 ### **Development Philosophy**
 - **Simplicity Over Complexity** - Simple solutions are more reliable
@@ -502,35 +508,6 @@ We welcome contributions! Here's how you can help:
 - **Gradual Improvement** - Small, safe changes over major refactoring
 
 ## 🔮 Roadmap
-
-### **Development Timeline**
-```mermaid
-gantt
-    title Extension Development Roadmap
-    dateFormat  YYYY-MM-DD
-    section Current (v3.1.0)
-    AI Summarization     :done, ai, 2024-12-01, 2024-12-31
-    WebLLM Integration   :done, webllm, 2024-12-01, 2024-12-31
-    Transformers.js      :done, transformers, 2024-12-01, 2024-12-31
-    UI Improvements      :done, ui, 2024-12-01, 2024-12-31
-    
-    section Phase 1 (Q1 2025)
-    Platform Expansion   :active, platforms, 2025-01-01, 2025-03-31
-    Coursera Support     :coursera, 2025-01-01, 2025-02-15
-    YouTube Support      :youtube, 2025-02-01, 2025-03-15
-    edX Support          :edx, 2025-03-01, 2025-03-31
-    
-    section Phase 2 (Q2 2025)
-    Advanced AI Features :advanced, 2025-04-01, 2025-06-30
-    Batch AI Processing  :batch, 2025-04-01, 2025-05-15
-    Custom AI Models     :custom, 2025-05-01, 2025-06-30
-    AI Tool Presets      :presets, 2025-06-01, 2025-06-30
-    
-    section Phase 3 (Q3 2025)
-    Multi-Platform Batch :multiplatform, 2025-07-01, 2025-09-30
-    Direct AI Integration:integration, 2025-07-01, 2025-08-31
-    Advanced Formatting  :formatting, 2025-08-01, 2025-09-30
-```
 
 ### **Feature Evolution**
 ```mermaid
@@ -650,6 +627,26 @@ This project is open source and available under the [MIT License](LICENSE).
 **⭐ If you find this extension helpful for your AI workflows, please give it a star on GitHub!**
 
 ---
+
+## 🎉 **What's New in v3.1.2**
+
+### **⚡ Auto-Summarization (NEW)**
+- **Instant Results** - Summary automatically generates when AI popup opens
+- **Smart Triggering** - No need to manually click "Generate Summary"
+- **Seamless Experience** - Just click "AI Summarize" and see results immediately
+
+### **📊 Compression Percentage System (NEW)**
+- **Intuitive Control** - 30% to 90% retention slider (default: 60%)
+- **Clear Examples** - 1000 words → 600 words (60% retention)
+- **Visual Feedback** - Real-time target length calculation
+- **Smart Caps** - Maximum length limits to prevent overly long summaries
+
+## 🎉 **What's New in v3.1.1**
+
+### **🔧 Settings Persistence**
+- **Remember Your Preferences** - All AI summarization settings are now saved and remembered
+- **Persistent Controls** - Your percentage, max length, and engine preferences persist across sessions
+- **No More Resets** - Settings stay exactly as you configured them when you return
 
 ## 🎉 **What's New in v3.1.0**
 
