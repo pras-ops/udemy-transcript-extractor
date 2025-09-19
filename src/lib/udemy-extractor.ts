@@ -550,10 +550,16 @@ export class UdemyExtractor {
     try {
       console.log('🎯 Starting transcript extraction...');
       
-      // Quick hover to show controls (reduced delay)
+      // Wait for video to be ready dynamically
+      const video = await this.waitForVideoReady(3000);
+      if (!video) {
+        throw new Error('Video not ready for transcript extraction');
+      }
+      
+      // Quick hover to show controls (dynamic timing)
       const videoContainer = document.querySelector('.video-viewer--video-viewer--0IkCW') || 
                             document.querySelector('[data-purpose="video-display"]') ||
-                            document.querySelector('video');
+                            video;
       
       if (videoContainer) {
         const hoverEvent = new MouseEvent('mousemove', {
@@ -564,10 +570,10 @@ export class UdemyExtractor {
           clientY: 300
         });
         videoContainer.dispatchEvent(hoverEvent);
-        await new Promise(resolve => setTimeout(resolve, 200)); // Reduced from 500ms
+        // No fixed delay - proceed immediately
       }
       
-      // Ensure transcript is active (optimized version)
+      // Ensure transcript is active with dynamic timing
       console.log('🎯 Ensuring transcript is active...');
       await this.ensureTranscriptActive();
       
@@ -666,8 +672,8 @@ export class UdemyExtractor {
       // Set track to showing mode
       preferredTrack.mode = 'showing';
       
-      // Reduced wait time for cues to load
-      await new Promise(res => setTimeout(res, 500)); // Reduced from 1000ms
+      // Wait for cues to load dynamically
+      await this.waitForCuesToLoad(preferredTrack, 2000);
 
       const cues = preferredTrack.cues ? Array.from(preferredTrack.cues as any) : [];
       if (cues.length === 0) {
@@ -710,7 +716,7 @@ export class UdemyExtractor {
       }
     }
     
-    // Quick hover simulation to show controls (reduced delay)
+    // Quick hover simulation to show controls (dynamic timing)
     const videoContainer = document.querySelector('.video-viewer--video-viewer--0IkCW') || 
                           document.querySelector('[data-purpose="video-display"]') ||
                           document.querySelector('.video-js') ||
@@ -725,26 +731,11 @@ export class UdemyExtractor {
         clientY: 300
       });
       videoContainer.dispatchEvent(hoverEvent);
-      await new Promise(resolve => setTimeout(resolve, 300)); // Reduced from 1000ms
+      // No fixed delay - proceed immediately
     }
     
-    // Look for transcript button with multiple selectors
-    const transcriptButtonSelectors = [
-      'button[data-purpose="transcript-toggle"]',
-      '[data-purpose="transcript-toggle"]',
-      'button[aria-label*="transcript" i]',
-      'button[aria-label*="captions" i]'
-    ];
-    
-    let transcriptButton: HTMLElement | null = null;
-    for (const selector of transcriptButtonSelectors) {
-      const button = document.querySelector(selector) as HTMLElement;
-      if (button && button.offsetParent !== null && !(button as HTMLButtonElement).disabled) {
-        transcriptButton = button;
-        console.log(`🎯 Found transcript button with selector: ${selector}`);
-        break;
-      }
-    }
+    // Wait for transcript button to be available dynamically
+    const transcriptButton = await this.waitForTranscriptButton(1500);
     
     if (transcriptButton) {
       console.log('🎯 Clicking transcript button...');
@@ -752,12 +743,9 @@ export class UdemyExtractor {
       // Simple click without excessive event simulation
       transcriptButton.click();
       
-      // Reduced wait time for panel to appear
-      await new Promise(resolve => setTimeout(resolve, 800)); // Reduced from 2000ms
-      
-      // Check if panel appeared
-      const panel = document.querySelector('[data-purpose="transcript-panel"]');
-      if (panel) {
+      // Wait for panel to appear dynamically
+      const panelReady = await this.waitForTranscriptElements(1000);
+      if (panelReady) {
         console.log('🎯 Transcript panel opened successfully');
         return;
       }
@@ -775,21 +763,19 @@ export class UdemyExtractor {
    * Enable captions through various methods
    */
   private static async enableCaptions(): Promise<void> {
-    // Method 1: Try captions dropdown
-    const captionsDropdown = document.querySelector('[data-purpose="captions-dropdown-button"]');
+    // Method 1: Try captions dropdown with dynamic timing
+    const captionsDropdown = await this.waitForElement('[data-purpose="captions-dropdown-button"]', 1000);
     if (captionsDropdown) {
       console.log('🎯 Trying captions dropdown...');
       (captionsDropdown as HTMLElement).click();
-      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Look for English captions
-      const englishButtons = Array.from(document.querySelectorAll('button, [role="button"]')).filter(btn => 
-        btn.textContent?.includes('English') && btn.textContent?.includes('[')
-      );
+      // Wait for dropdown to open dynamically
+      await new Promise(resolve => setTimeout(resolve, 100)); // Minimal delay for dropdown animation
       
-      if (englishButtons.length > 0) {
-        (englishButtons[0] as HTMLElement).click();
-        await new Promise(resolve => setTimeout(resolve, 500));
+      // Look for English captions with dynamic timing
+      const englishButton = await this.waitForElement('button[aria-label*="English"], button:has-text("English")', 500);
+      if (englishButton) {
+        (englishButton as HTMLElement).click();
         console.log('🎯 English captions activated');
         return;
       }
@@ -818,7 +804,7 @@ export class UdemyExtractor {
   }
 
   /**
-   * Wait for an element to appear in the DOM
+   * Wait for an element to appear in the DOM with dynamic timing
    */
   private static async waitForElement(selector: string, timeout: number = 5000): Promise<Element | null> {
     return new Promise((resolve) => {
@@ -849,6 +835,112 @@ export class UdemyExtractor {
   }
 
   /**
+   * Wait for video to be ready with dynamic timing
+   */
+  private static async waitForVideoReady(timeout: number = 3000): Promise<HTMLVideoElement | null> {
+    return new Promise((resolve) => {
+      const video = document.querySelector('video') as HTMLVideoElement;
+      if (video && video.readyState >= 2) { // HAVE_CURRENT_DATA or higher
+        resolve(video);
+        return;
+      }
+
+      const checkVideo = () => {
+        const video = document.querySelector('video') as HTMLVideoElement;
+        if (video && video.readyState >= 2) {
+          resolve(video);
+          return;
+        }
+        setTimeout(checkVideo, 50); // Check every 50ms
+      };
+
+      checkVideo();
+
+      setTimeout(() => {
+        resolve(null);
+      }, timeout);
+    });
+  }
+
+  /**
+   * Wait for transcript elements to be available with dynamic timing
+   */
+  private static async waitForTranscriptElements(timeout: number = 2000): Promise<boolean> {
+    return new Promise((resolve) => {
+      const checkElements = () => {
+        const hasPanel = document.querySelector('[data-purpose="transcript-panel"]');
+        const hasCues = document.querySelector('[data-purpose="transcript-cue"]');
+        const video = document.querySelector('video') as HTMLVideoElement;
+        const hasTextTracks = video && video.textTracks && video.textTracks.length > 0;
+        
+        if (hasPanel || hasCues || hasTextTracks) {
+          resolve(true);
+          return;
+        }
+        setTimeout(checkElements, 50); // Check every 50ms
+      };
+
+      checkElements();
+
+      setTimeout(() => {
+        resolve(false);
+      }, timeout);
+    });
+  }
+
+  /**
+   * Wait for transcript button to be clickable with dynamic timing
+   */
+  private static async waitForTranscriptButton(timeout: number = 1500): Promise<HTMLElement | null> {
+    return new Promise((resolve) => {
+      const checkButton = () => {
+        const buttonSelectors = [
+          'button[data-purpose="transcript-toggle"]',
+          '[data-purpose="transcript-toggle"]',
+          'button[aria-label*="transcript" i]',
+          'button[aria-label*="captions" i]'
+        ];
+        
+        for (const selector of buttonSelectors) {
+          const button = document.querySelector(selector) as HTMLElement;
+          if (button && button.offsetParent !== null && !(button as HTMLButtonElement).disabled) {
+            resolve(button);
+            return;
+          }
+        }
+        setTimeout(checkButton, 50); // Check every 50ms
+      };
+
+      checkButton();
+
+      setTimeout(() => {
+        resolve(null);
+      }, timeout);
+    });
+  }
+
+  /**
+   * Wait for text track cues to load with dynamic timing
+   */
+  private static async waitForCuesToLoad(track: TextTrack, timeout: number = 2000): Promise<void> {
+    return new Promise((resolve) => {
+      const checkCues = () => {
+        if (track.cues && track.cues.length > 0) {
+          resolve();
+          return;
+        }
+        setTimeout(checkCues, 50); // Check every 50ms
+      };
+
+      checkCues();
+
+      setTimeout(() => {
+        resolve();
+      }, timeout);
+    });
+  }
+
+  /**
    * Check if we're on a Udemy course page
    */
   static isUdemyCoursePage(): boolean {
@@ -865,6 +957,20 @@ export class UdemyExtractor {
     });
     
     return result;
+  }
+
+  /**
+   * Check if page is ready for transcript collection (faster check)
+   */
+  static isPageReadyForCollection(): boolean {
+    // Quick check if basic elements are loaded
+    const video = document.querySelector('video');
+    const hasVideo = video && video.readyState >= 2; // HAVE_CURRENT_DATA or higher
+    
+    // Check if transcript elements exist (even if not visible)
+    const hasTranscriptElements = document.querySelector('[data-purpose="transcript-panel"], [data-purpose="transcript-cue"], video[textTracks]');
+    
+    return !!(hasVideo && (hasTranscriptElements || video?.textTracks?.length > 0));
   }
 
   /**

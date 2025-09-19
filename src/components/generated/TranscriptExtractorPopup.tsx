@@ -338,13 +338,26 @@ export const TranscriptExtractorPopup = () => {
       console.log('🎯 Calling ExtensionService.extractTranscript()...');
       const response = await ExtensionService.extractTranscript();
       console.log('🎯 ExtensionService.extractTranscript() response:', response);
+      console.log('🎯 Response success:', response.success);
+      console.log('🎯 Response data length:', response.data?.length);
+      console.log('🎯 Response error:', response.error);
+      
       if (response.success && response.data) {
+        console.log('🎯 Setting extracted transcript and success status...');
         setExtractedTranscript(response.data);
         setExtractionStatus('success');
+        console.log('🎯 Extraction status set to success, transcript length:', response.data.length);
         
-        // Auto-export based on selected target
-        await handleExport(response.data);
+        // Show success message and keep popup open for user to choose next action
+        setErrorMessage(''); // Clear any previous errors
+        
+        // Don't auto-export to prevent popup from closing
+        // User can now choose to:
+        // 1. Use AI Summarization
+        // 2. Export to clipboard/download
+        // 3. View the transcript
       } else {
+        console.log('🎯 Extraction failed, setting error status...');
         setErrorMessage(response.error || 'Failed to extract transcript');
         setExtractionStatus('error');
       }
@@ -358,11 +371,19 @@ export const TranscriptExtractorPopup = () => {
 
   // AI Summarization handlers
   const handleAISummarize = () => {
+    console.log('🎯 handleAISummarize called, transcript length:', extractedTranscript?.length);
+    console.log('🎯 extractionStatus:', extractionStatus);
+    console.log('🎯 extractedTranscript exists:', !!extractedTranscript);
+    console.log('🎯 extractedTranscript length:', extractedTranscript?.length);
+    
     if (!extractedTranscript || extractedTranscript.trim().length === 0) {
+      console.log('🎯 No transcript available, showing error message');
       setErrorMessage('Please extract a transcript first before generating an AI summary');
       return;
     }
+    console.log('🎯 Opening AI popup...');
     setShowAIPopup(true);
+    console.log('🎯 AI popup state set to true');
   };
 
   const handleAISummaryGenerated = (summary: string) => {
@@ -914,6 +935,7 @@ export const TranscriptExtractorPopup = () => {
           </div>
         </button>
       )}
+      
 
       {/* Course Structure */}
       <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -966,8 +988,16 @@ export const TranscriptExtractorPopup = () => {
             <span className="text-sm font-medium text-green-900 dark:text-green-100">Transcript Extracted Successfully!</span>
           </div>
           <p className="text-xs text-green-700 dark:text-green-300 mt-1">
-            {extractedTranscript.split('\n\n').length} entries extracted
+            {extractedTranscript.split('\n\n').length} entries extracted ({extractedTranscript.split(/\s+/).length} words)
           </p>
+          <div className="mt-2 text-xs text-green-600 dark:text-green-400">
+            <p>✨ Now you can:</p>
+            <ul className="list-disc list-inside mt-1 space-y-1">
+              <li>Use AI Summarization to create a concise summary</li>
+              <li>Export to clipboard or download</li>
+              <li>View the full transcript</li>
+            </ul>
+          </div>
         </div>
       )}
     </div>;
@@ -1066,11 +1096,14 @@ export const TranscriptExtractorPopup = () => {
 
       {/* AI Summarization Popup */}
       {showAIPopup && (
-        <AISummarizationPopup
-          transcript={extractedTranscript}
-          onClose={handleCloseAIPopup}
-          onSummaryGenerated={handleAISummaryGenerated}
-        />
+        <>
+          {console.log('🎯 Rendering AISummarizationPopup with transcript length:', extractedTranscript?.length)}
+          <AISummarizationPopup
+            transcript={extractedTranscript}
+            onClose={handleCloseAIPopup}
+            onSummaryGenerated={handleAISummaryGenerated}
+          />
+        </>
       )}
     </>
   );

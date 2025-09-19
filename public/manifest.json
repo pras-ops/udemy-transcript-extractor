@@ -7,8 +7,12 @@
     "activeTab",
     "storage",
     "clipboardWrite",
-    "scripting"
+    "scripting",
+    "offscreen"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "host_permissions": [
     "https://*.udemy.com/*",
     "https://*.coursera.org/*",
@@ -16,7 +20,9 @@
     "https://www.youtube.com/*",
     "https://video.google.com/*",
     "https://*.edx.org/*",
-    "https://*.pluralsight.com/*"
+    "https://*.pluralsight.com/*",
+    "https://huggingface.co/*",
+    "https://cdn.jsdelivr.net/*"
   ],
   "action": {
     "default_popup": "index.html",
@@ -40,7 +46,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["sw.js", "udemy-extractor.js"],
+      "resources": ["sw.js", "udemy-extractor.js", "offscreen.html", "offscreen.js", "index.js", "transformers.js"],
       "matches": ["https://*.udemy.com/*", "https://*.coursera.org/*", "https://*.youtube.com/*", "https://*.edx.org/*", "https://*.pluralsight.com/*"]
     }
   ]

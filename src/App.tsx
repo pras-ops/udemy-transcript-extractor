@@ -7,6 +7,8 @@ let theme: Theme = 'light';
 let container: Container = 'none';
 
 function App() {
+  console.log('🎯 App.tsx: App component is rendering!');
+  
   function setTheme(theme: Theme) {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');

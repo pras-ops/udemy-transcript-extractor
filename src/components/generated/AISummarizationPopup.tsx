@@ -28,16 +28,22 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
   onClose,
   onSummaryGenerated
 }) => {
+  console.log('🎯 AISummarizationPopup: Component mounted with transcript length:', transcript?.length);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summary, setSummary] = useState<string>('');
   const [error, setError] = useState<string>('');
-  const [engine, setEngine] = useState<'webllm' | 'transformers' | null>(null);
+  const [engine, setEngine] = useState<'webllm' | 'transformers' | 'mock' | 'enhanced' | null>(null);
   const [options, setOptions] = useState<SummarizationOptions>({
     maxLength: 150,
     minLength: 50,
     useWebLLM: true,
-    compressionPercentage: 60, // Default: retain 60% of original
-    maxLengthCap: 1000
+    compressionPercentage: 10, // Default: retain 10% of original (more aggressive compression)
+    maxLengthCap: 1000,
+    outputFormat: 'paragraph',
+    targetWordCount: 300,
+    includeExamples: true,
+    includeDefinitions: true,
+    focusAreas: []
   });
   const [showSettings, setShowSettings] = useState(false);
   const [availableEngines, setAvailableEngines] = useState<{ webllm: boolean; transformers: boolean; mock: boolean }>({
@@ -75,16 +81,30 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
   };
 
   useEffect(() => {
+    console.log('🎯 AISummarizationPopup: useEffect mount');
+    
     // Load saved settings first
     loadSavedSettings();
     
     // Check available engines on mount
     const engines = aiSummarizationService.getAvailableEngines();
+    console.log('🎯 Available engines from service:', engines);
     setAvailableEngines(engines);
     
     // Get setup instructions
     const instructions = aiSummarizationService.getSetupInstructions();
     setSetupInstructions(instructions);
+    
+    // Test the service directly
+    console.log('🎯 Testing AI service directly...');
+    aiSummarizationService.summarizeTranscript('Test transcript for debugging', {
+      compressionPercentage: 60,
+      maxLengthCap: 1000
+    }).then(result => {
+      console.log('🎯 Direct test result:', result);
+    }).catch(error => {
+      console.log('🎯 Direct test error:', error);
+    });
   }, []);
 
   // Auto-start summarization when transcript is provided
@@ -106,22 +126,31 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
   }, [transcript]);
 
   const handleSummarize = async () => {
+    console.log('🎯 AISummarizationPopup: handleSummarize called');
+    console.log('🎯 AISummarizationPopup: transcript length:', transcript?.length);
+    console.log('🎯 AISummarizationPopup: options:', options);
+    
     if (!transcript || transcript.trim().length === 0) {
+      console.log('🎯 AISummarizationPopup: No transcript provided');
       setError('No transcript provided for summarization');
       return;
     }
 
+    console.log('🎯 AISummarizationPopup: Starting summarization...');
     setIsSummarizing(true);
     setError('');
     setSummary('');
 
     try {
+      console.log('🎯 AISummarizationPopup: Calling aiSummarizationService.summarizeTranscript...');
       const result: SummarizationResult = await aiSummarizationService.summarizeTranscript(
         transcript,
         options
       );
+      console.log('🎯 AISummarizationPopup: Received result:', result);
 
       if (result.success && result.summary) {
+        console.log('🎯 AISummarizationPopup: Summary generated successfully');
         setSummary(result.summary);
         setEngine(result.engine || null);
         
@@ -137,9 +166,11 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
         
         onSummaryGenerated?.(result.summary);
       } else {
+        console.log('🎯 AISummarizationPopup: Summarization failed:', result.error);
         setError(result.error || 'Failed to generate summary');
       }
     } catch (error) {
+      console.error('🎯 AISummarizationPopup: Summarization error:', error);
       setError(`Summarization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSummarizing(false);
@@ -177,6 +208,8 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
         return <Zap className="w-4 h-4 text-purple-500" />;
       case 'transformers':
         return <Cpu className="w-4 h-4 text-blue-500" />;
+      case 'enhanced':
+        return <Sparkles className="w-4 h-4 text-green-500" />;
       default:
         return <Sparkles className="w-4 h-4 text-gray-500" />;
     }
@@ -190,6 +223,8 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
         return 'Transformers.js (CPU)';
       case 'mock':
         return 'Basic Summary (Mock)';
+      case 'enhanced':
+        return 'Enhanced Summary (Local)';
       default:
         return 'Unknown';
     }
@@ -253,7 +288,7 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
                       Compression Level
                     </label>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      How much of original text to retain
+                      How much of original text to retain ({options.compressionPercentage}%)
                     </p>
                   </div>
                 </div>
@@ -368,6 +403,92 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
                         ? 'bg-gray-200 peer-checked:bg-purple-600 dark:bg-gray-700' 
                         : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed'
                     } peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:peer-focus:ring-purple-800 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600`}></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Output Format */}
+              <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                    <Settings className="w-4 h-4 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-900 dark:text-white">
+                      Output Format
+                    </label>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      How to structure the summary
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'paragraph', label: 'Paragraph', icon: '📝' },
+                    { value: 'bullet-points', label: 'Bullet Points', icon: '•' },
+                    { value: 'numbered-list', label: 'Numbered List', icon: '1.' }
+                  ].map((format) => (
+                    <button
+                      key={format.value}
+                      onClick={() => {
+                        const newOptions = { ...options, outputFormat: format.value as any };
+                        setOptions(newOptions);
+                        saveSettings(newOptions);
+                      }}
+                      className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                        options.outputFormat === format.value
+                          ? 'bg-green-100 border-green-500 text-green-700 dark:bg-green-900/30 dark:border-green-400 dark:text-green-300'
+                          : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      <div className="text-lg mb-1">{format.icon}</div>
+                      <div>{format.label}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Content Options */}
+              <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                    <Info className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-900 dark:text-white">
+                      Content Options
+                    </label>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      What to include in the summary
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={options.includeExamples || false}
+                      onChange={(e) => {
+                        const newOptions = { ...options, includeExamples: e.target.checked };
+                        setOptions(newOptions);
+                        saveSettings(newOptions);
+                      }}
+                      className="w-4 h-4 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500 dark:focus:ring-orange-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Include examples</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={options.includeDefinitions || false}
+                      onChange={(e) => {
+                        const newOptions = { ...options, includeDefinitions: e.target.checked };
+                        setOptions(newOptions);
+                        saveSettings(newOptions);
+                      }}
+                      className="w-4 h-4 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500 dark:focus:ring-orange-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Include key definitions</span>
                   </label>
                 </div>
               </div>
@@ -568,7 +689,7 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
                     {engine && (
                       <div className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded-full">
                         <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                          {engine === 'webllm' ? 'WebLLM' : engine === 'transformers' ? 'Transformers.js' : 'Basic'}
+                          {engine === 'webllm' ? 'WebLLM' : engine === 'transformers' ? 'Transformers.js' : engine === 'enhanced' ? 'Enhanced' : 'Basic'}
                         </span>
                       </div>
                     )}

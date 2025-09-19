@@ -2,6 +2,7 @@
 
 // Track active tabs to clean up data when they're closed
 let activeTabs = new Set();
+let offscreenDocumentId = null;
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Transcript Extractor Extension installed');
@@ -11,6 +12,94 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.action.onClicked.addListener((tab) => {
   console.log('Extension icon clicked on tab:', tab.url);
 });
+
+// AI Summarization Handler
+async function handleAISummarization(data, sendResponse) {
+  try {
+    console.log('🤖 Background: Handling AI summarization request');
+    console.log('🤖 Background: Data received:', data);
+    
+    // Ensure offscreen document is available
+    console.log('🤖 Background: Ensuring offscreen document...');
+    await ensureOffscreenDocument();
+    console.log('🤖 Background: Offscreen document ensured');
+    
+    // Send request to offscreen document
+    console.log('🤖 Background: Sending message to offscreen document...');
+    const response = await chrome.runtime.sendMessage({
+      type: 'SUMMARIZE_TRANSCRIPT',
+      data: data
+    });
+    
+    console.log('🤖 Background: Received response from offscreen:', response);
+    sendResponse(response);
+  } catch (error) {
+    console.error('❌ Background: AI summarization failed:', error);
+    sendResponse({
+      success: false,
+      error: error.message || 'AI processing failed'
+    });
+  }
+}
+
+// Ensure offscreen document is created
+async function ensureOffscreenDocument() {
+  // Check if we already have an offscreen document
+  if (offscreenDocumentId) {
+    try {
+      // Try to ping the existing offscreen document
+      await chrome.runtime.sendMessage({ type: 'CHECK_ENGINES' });
+      console.log('✅ Offscreen document already exists and is responsive');
+      return;
+    } catch (error) {
+      console.log('🔄 Existing offscreen document is not responsive, will recreate...');
+      offscreenDocumentId = null;
+    }
+  }
+  
+  // Check if there's already an offscreen document created by Chrome
+  try {
+    const existingDocuments = await chrome.offscreen.hasDocument();
+    if (existingDocuments) {
+      console.log('🔄 Chrome already has an offscreen document, using existing one...');
+      // Try to communicate with the existing document
+      try {
+        await chrome.runtime.sendMessage({ type: 'CHECK_ENGINES' });
+        console.log('✅ Successfully connected to existing offscreen document');
+        return;
+      } catch (error) {
+        console.log('🔄 Existing offscreen document is not responsive, will close and recreate...');
+        await chrome.offscreen.closeDocument();
+      }
+    }
+  } catch (error) {
+    console.log('🔄 Error checking existing offscreen documents:', error);
+  }
+  
+  try {
+    console.log('🔄 Creating new offscreen document...');
+    offscreenDocumentId = await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['WORKERS'],
+      justification: 'AI processing with WebGPU and model downloads'
+    });
+    console.log('✅ Offscreen document created:', offscreenDocumentId);
+    
+    // Test communication with offscreen document
+    setTimeout(async () => {
+      try {
+        console.log('🔍 Testing offscreen document communication...');
+        const testResponse = await chrome.runtime.sendMessage({ type: 'CHECK_ENGINES' });
+        console.log('✅ Offscreen document communication test:', testResponse);
+      } catch (error) {
+        console.log('❌ Offscreen document communication test failed:', error);
+      }
+    }, 1000);
+  } catch (error) {
+    console.error('❌ Failed to create offscreen document:', error);
+    throw error;
+  }
+}
 
 // Listen for messages from content script or popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -22,8 +111,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('🎯 Tracking active tab:', sender.tab.id);
   }
   
+  // Handle AI summarization requests
+  if (message.type === 'AI_SUMMARIZE') {
+    handleAISummarization(message.data, sendResponse);
+    return true; // Keep message channel open for async response
+  }
+  
+  // Handle engine availability check
+  if (message.type === 'CHECK_ENGINES') {
+    handleEngineCheck(sendResponse);
+    return true; // Keep message channel open for async response
+  }
+  
   sendResponse({ success: true });
 });
+
+// Handle engine availability check
+async function handleEngineCheck(sendResponse) {
+  try {
+    console.log('🤖 Background: Handling engine check request');
+    
+    // Ensure offscreen document is available
+    await ensureOffscreenDocument();
+    
+    // Send request to offscreen document
+    const response = await chrome.runtime.sendMessage({
+      type: 'CHECK_ENGINES'
+    });
+    
+    console.log('🤖 Background: Engine check response:', response);
+    sendResponse(response);
+  } catch (error) {
+    console.error('❌ Background: Engine check failed:', error);
+    sendResponse({
+      success: false,
+      error: error.message || 'Engine check failed'
+    });
+  }
+}
 
 // Monitor tab updates to detect when user switches tabs
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -98,9 +223,27 @@ async function clearAllExtensionData() {
     // Clear any runtime data
     activeTabs.clear();
     
+    // Close offscreen document if it exists
+    await closeOffscreenDocument();
+    
     console.log('🎯 All extension data auto-cleared');
   } catch (error) {
     console.error('Error auto-clearing extension data:', error);
+  }
+}
+
+// Function to close offscreen document
+async function closeOffscreenDocument() {
+  try {
+    if (offscreenDocumentId) {
+      console.log('🔄 Closing offscreen document...');
+      await chrome.offscreen.closeDocument();
+      offscreenDocumentId = null;
+      console.log('✅ Offscreen document closed');
+    }
+  } catch (error) {
+    console.log('🔄 Error closing offscreen document:', error);
+    offscreenDocumentId = null;
   }
 }
 

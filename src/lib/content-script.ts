@@ -228,14 +228,8 @@ class ContentScript {
       try {
         const result = await UdemyExtractor.extractTranscript();
         
-        // Copy to clipboard using enhanced method
-        if (result && result.trim().length > 0) {
-          try {
-            await this.copyToClipboard(result);
-          } catch (clipboardError) {
-            console.error('Clipboard copy failed:', clipboardError);
-          }
-        }
+        // Don't auto-copy to clipboard to prevent popup from closing
+        // User can manually export if needed
         
         return result;
       } catch (error) {
@@ -248,13 +242,8 @@ class ContentScript {
       try {
         const result = await YouTubeExtractor.extractTranscript();
         
-        if (result && result.trim().length > 0) {
-          try {
-            await this.copyToClipboard(result);
-          } catch (clipboardError) {
-            console.error('Clipboard copy failed:', clipboardError);
-          }
-        }
+        // Don't auto-copy to clipboard to prevent popup from closing
+        // User can manually export if needed
         
         return result;
       } catch (error) {
@@ -267,13 +256,8 @@ class ContentScript {
       try {
         const result = await CourseraExtractor.extractTranscript();
         
-        if (result && result.trim().length > 0) {
-          try {
-            await this.copyToClipboard(result);
-          } catch (clipboardError) {
-            console.error('Clipboard copy failed:', clipboardError);
-          }
-        }
+        // Don't auto-copy to clipboard to prevent popup from closing
+        // User can manually export if needed
         
         return result;
       } catch (error) {
@@ -444,11 +428,11 @@ class ContentScript {
         }));
       }
       
-      // Give a moment for the click to register
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Give a moment for the click to register (minimal delay)
+      await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Wait for navigation to complete
-      await this.waitForLectureChange();
+      // Wait for navigation to complete with dynamic timing
+      await this.waitForLectureChange(3000); // Reduced timeout with faster detection
       
       // Verify that navigation actually happened
       const finalUrl = window.location.href;
@@ -501,7 +485,7 @@ class ContentScript {
           return;
         }
         
-        setTimeout(checkForChange, 200);
+        setTimeout(checkForChange, 100); // Reduced from 200ms to 100ms for faster detection
       };
       
       checkForChange();
@@ -513,6 +497,10 @@ class ContentScript {
       // Get current lecture ID from URL
       const lectureId = this.getCurrentLectureId();
       console.log('🎯 Collecting transcript for lecture:', lectureId);
+      
+      // Quick check if page is ready for collection
+      const isPageReady = UdemyExtractor.isPageReadyForCollection();
+      console.log('🎯 Page ready for collection:', isPageReady);
       
       // Check if transcript is available first
       const isAvailable = await UdemyExtractor.isTranscriptAvailable();
@@ -578,42 +566,50 @@ class ContentScript {
     try {
       console.log('🎯 Copying to clipboard, text length:', text.length);
       
-      // Clear clipboard first
-      try {
-        if (navigator.clipboard && window.isSecureContext) {
-          await navigator.clipboard.writeText('');
-          console.log('🎯 Cleared clipboard');
-        }
-      } catch (clearError) {
-        console.log('🎯 Could not clear clipboard:', clearError);
-      }
-
-      // Method 1: Modern Clipboard API
+      // Method 1: Modern Clipboard API (try without clearing first)
       if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-        console.log('🎯 Successfully copied to clipboard using modern API');
-        return true;
+        try {
+          await navigator.clipboard.writeText(text);
+          console.log('🎯 Successfully copied to clipboard using modern API');
+          return true;
+        } catch (error) {
+          console.log('🎯 Modern clipboard API failed:', error.message);
+        }
       }
     } catch (error) {
       console.log('🎯 Modern clipboard API failed, trying fallback...');
     }
 
     try {
-      // Method 2: Legacy execCommand with better element handling
+      // Method 2: Legacy execCommand with improved focus handling
       const textarea = document.createElement('textarea');
       textarea.value = text;
-      textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0;z-index:-1;';
+      textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0;z-index:9999;pointer-events:none;';
       document.body.appendChild(textarea);
       
-      // Focus the textarea first
+      // Try to focus the document first
+      if (document.hasFocus && !document.hasFocus()) {
+        window.focus();
+      }
+      
+      // Focus the textarea and select text
       textarea.focus();
       textarea.select();
+      textarea.setSelectionRange(0, text.length);
       
+      // Try to copy
       const success = document.execCommand('copy');
+      
+      // Clean up
       document.body.removeChild(textarea);
       
-      console.log('🎯 Fallback clipboard copy result:', success);
-      return success;
+      if (success) {
+        console.log('🎯 Fallback clipboard copy successful');
+        return true;
+      } else {
+        console.log('🎯 Fallback clipboard copy failed');
+        return false;
+      }
     } catch (error) {
       console.error('🎯 All clipboard methods failed:', error);
       return false;

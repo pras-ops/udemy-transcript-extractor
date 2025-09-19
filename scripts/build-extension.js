@@ -35,6 +35,21 @@ async function buildExtension() {
     console.log('✓ Copied service worker (sw.js)');
   }
 
+  // Copy offscreen document and script
+  const offscreenHtmlPath = path.join(__dirname, '../public/offscreen.html');
+  const distOffscreenHtmlPath = path.join(distDir, 'offscreen.html');
+  if (fs.existsSync(offscreenHtmlPath)) {
+    fs.copyFileSync(offscreenHtmlPath, distOffscreenHtmlPath);
+    console.log('✓ Copied offscreen.html');
+  }
+
+  const offscreenJsPath = path.join(__dirname, '../public/offscreen.js');
+  const distOffscreenJsPath = path.join(distDir, 'offscreen.js');
+  if (fs.existsSync(offscreenJsPath)) {
+    fs.copyFileSync(offscreenJsPath, distOffscreenJsPath);
+    console.log('✓ Copied offscreen.js');
+  }
+
   // Copy icons (if they exist)
   const iconsDir = path.join(__dirname, '../public/icons');
   const distIconsDir = path.join(distDir, 'icons');

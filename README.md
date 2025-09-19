@@ -3,7 +3,7 @@
 A powerful Chrome extension that automatically extracts and collects transcripts from educational video platforms with **AI-powered summarization**. Built for AI enthusiasts who need quick access to educational content for tools like NotebookLLM, ChatGPT, and other AI platforms.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-blue?logo=google-chrome)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/version-3.1.2-green.svg)](https://github.com/your-username/transcript-extractor)
+[![Version](https://img.shields.io/badge/version-3.1.0-green.svg)](https://github.com/your-username/transcript-extractor)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![AI Powered](https://img.shields.io/badge/AI-Powered-purple?logo=openai)](https://github.com/your-username/transcript-extractor)
 
@@ -490,7 +490,7 @@ We welcome contributions! Here's how you can help:
 
 ## 📊 Project Status
 
-### **Current Status: v3.1.2 Release**
+### **Current Status: v3.1.0 Release**
 - ✅ All core features working
 - ✅ AI summarization fully implemented
 - ✅ User-tested and refined
@@ -520,13 +520,11 @@ graph TD
     C --> E
     D --> E
     
-    E --> F[Coursera Support]
-    E --> G[YouTube Support]
-    E --> H[edX Support]
+    E --> F[Coursera Support ✅]
+    E --> G[YouTube Support ✅]
     
     F --> I[v5.0 Advanced AI]
     G --> I
-    H --> I
     
     I --> J[Batch AI Processing]
     I --> K[Custom AI Models]
@@ -547,10 +545,8 @@ graph TD
 ```
 
 ### **Phase 1: Platform Expansion (Q1 2025)**
-- **Coursera** - Full transcript extraction support
-- **YouTube** - Educational video transcript collection
-- **edX** - Course transcript extraction
-- **Pluralsight** - Video transcript support
+- **Coursera** - Full transcript extraction support ✅ **COMPLETED**
+- **YouTube** - Educational video transcript collection ✅ **COMPLETED**
 
 ### **Phase 2: Enhanced AI Integration (Q2 2025)**
 - **Multi-Platform Batch Processing** - Collect from multiple platforms simultaneously
@@ -627,19 +623,6 @@ This project is open source and available under the [MIT License](LICENSE).
 **⭐ If you find this extension helpful for your AI workflows, please give it a star on GitHub!**
 
 ---
-
-## 🎉 **What's New in v3.1.2**
-
-### **⚡ Auto-Summarization (NEW)**
-- **Instant Results** - Summary automatically generates when AI popup opens
-- **Smart Triggering** - No need to manually click "Generate Summary"
-- **Seamless Experience** - Just click "AI Summarize" and see results immediately
-
-### **📊 Compression Percentage System (NEW)**
-- **Intuitive Control** - 30% to 90% retention slider (default: 60%)
-- **Clear Examples** - 1000 words → 600 words (60% retention)
-- **Visual Feedback** - Real-time target length calculation
-- **Smart Caps** - Maximum length limits to prevent overly long summaries
 
 ## 🎉 **What's New in v3.1.1**
 
