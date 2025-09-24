@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Transcript Extractor",
-  "version": "3.4.0",
-  "description": "Extract transcripts from educational platforms like Udemy, Coursera, YouTube, and more",
+  "version": "3.5.0",
+  "description": "Extract transcripts from educational platforms with AI-powered dynamic subject detection and intelligent summarization",
   "permissions": [
     "activeTab",
     "storage",

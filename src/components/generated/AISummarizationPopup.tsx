@@ -39,7 +39,9 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summary, setSummary] = useState<string>('');
   const [error, setError] = useState<string>('');
-  const [engine, setEngine] = useState<'webllm' | 'transformers' | 'mock' | 'enhanced' | 'simple' | 'rag-enhanced' | 'enhanced-local' | 'error' | null>(null);
+  const [engine, setEngine] = useState<'webllm' | 'transformers' | 'mock' | 'enhanced' | 'simple' | 'rag-enhanced' | 'enhanced-local' | 'dynamic-enhanced' | 'error' | null>(null);
+  const [subjects, setSubjects] = useState<Array<{name: string, confidence: number, keywords: string[]}>>([]);
+  const [primarySubject, setPrimarySubject] = useState<string>('');
   const [options, setOptions] = useState<SummarizationOptions>({
     summaryMode: initialSettings?.summaryMode ?? SummaryMode.Simple, // Default: Simple overview
     useWebLLM: initialSettings?.useWebLLM ?? true, // Enable AI engines for better summarization
@@ -166,10 +168,15 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
     setSummary('');
 
     try {
-      console.log('🎯 AISummarizationPopup: Calling aiSummarizationService.summarizeTranscript...');
+      console.log('🎯 AISummarizationPopup: Calling aiSummarizationService.generateFullyDynamicSummary...');
       console.log('🎯 AISummarizationPopup: Final options being passed:', options);
-      const result: SummarizationResult = await aiSummarizationService.summarizeTranscript(
+      
+      // Get video title from the page or use default
+      const videoTitle = document.title || 'Video Transcript';
+      
+      const result: SummarizationResult = await aiSummarizationService.generateFullyDynamicSummary(
         transcript,
+        videoTitle,
         options
       );
       console.log('🎯 AISummarizationPopup: Received result:', result);
@@ -179,6 +186,14 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
         console.log('🎯 AISummarizationPopup: Engine received:', result.engine);
         setSummary(result.summary);
         setEngine(result.engine || null);
+        
+        // Update dynamic subject information
+        if (result.subjects) {
+          setSubjects(result.subjects);
+        }
+        if (result.primarySubject) {
+          setPrimarySubject(result.primarySubject);
+        }
         
         // Update word count information
         if (result.originalWordCount !== undefined && result.summaryWordCount !== undefined) {
@@ -406,6 +421,61 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
                 </div>
               </div>
 
+              {/* Dynamic Subject Information */}
+              {primarySubject && subjects.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg">
+                      <Info className="w-5 h-5 text-white" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                      Detected Subjects
+                    </h3>
+                  </div>
+                  <div className="p-5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">
+                          Primary Subject
+                        </h4>
+                        <div className="px-3 py-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                          <span className="text-green-700 dark:text-green-400 font-medium">
+                            {primarySubject}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {subjects.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">
+                            All Detected Subjects
+                          </h4>
+                          <div className="space-y-2">
+                            {subjects.map((subject, index) => (
+                              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                <div>
+                                  <span className="font-medium text-gray-900 dark:text-white">
+                                    {subject.name}
+                                  </span>
+                                  {subject.keywords.length > 0 && (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                      Keywords: {subject.keywords.join(', ')}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {Math.round(subject.confidence * 100)}% confidence
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Actions */}
               <div className="flex gap-3">
                 <button
@@ -461,7 +531,11 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
                     {engine && (
                       <div className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded-full">
                         <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                          {engine === 'webllm' ? 'WebLLM' : engine === 'transformers' ? 'Transformers.js' : engine === 'enhanced' ? 'Enhanced' : 'Basic'}
+                          {engine === 'webllm' ? 'WebLLM' : 
+                           engine === 'transformers' ? 'Transformers.js' : 
+                           engine === 'enhanced' ? 'Enhanced' : 
+                           engine === 'dynamic-enhanced' ? 'Dynamic AI' : 
+                           'Basic'}
                         </span>
                       </div>
                     )}

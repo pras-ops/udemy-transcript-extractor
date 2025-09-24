@@ -10,6 +10,8 @@ declare global {
 
 // Import enhanced RAG service
 import { localRAGService, ValidationResult } from './local-rag-service';
+// Import fully dynamic subject detector
+import { FullyDynamicDetector } from './fully-dynamic-detector';
 
 export enum SummaryMode {
   Simple = 'simple',      // Always 2-3 sentence overview
@@ -29,7 +31,7 @@ export interface SummarizationResult {
   success: boolean;
   summary?: string;
   error?: string;
-  engine?: 'webllm' | 'transformers' | 'mock' | 'enhanced' | 'simple' | 'rag-enhanced';
+  engine?: 'webllm' | 'transformers' | 'mock' | 'enhanced' | 'simple' | 'rag-enhanced' | 'dynamic-enhanced';
   originalWordCount?: number;
   summaryWordCount?: number;
   targetLength?: number;
@@ -37,6 +39,9 @@ export interface SummarizationResult {
   validation?: ValidationResult;
   ragContext?: string[];
   confidence?: number;
+  // Dynamic subject detection results
+  subjects?: Array<{name: string, confidence: number, keywords: string[]}>;
+  primarySubject?: string;
 }
 
 class AISummarizationService {
@@ -965,6 +970,92 @@ AI Summarization Status:
 
 📚 This extension prioritizes your privacy while providing high-quality transcript summarization.
     `.trim();
+  }
+
+  /**
+   * Generate enhanced summary with fully dynamic subject detection
+   */
+  async generateFullyDynamicSummary(
+    transcript: string, 
+    videoTitle: string = 'Untitled Video',
+    options: SummarizationOptions = {}
+  ): Promise<SummarizationResult> {
+    try {
+      console.log('🚀 Starting fully dynamic summarization with subject detection...');
+      
+      // Step 1: Generate base summary using existing pipeline
+      const baseResult = await this.summarizeTranscript(transcript, options);
+      
+      if (!baseResult.success || !baseResult.summary) {
+        return {
+          success: false,
+          error: 'Failed to generate base summary',
+          engine: 'dynamic-enhanced'
+        };
+      }
+
+      // Step 2: Detect subjects using fully dynamic approach
+      console.log('🔍 Detecting subjects dynamically...');
+      const subjectInfo = await FullyDynamicDetector.detectSubjects(baseResult.summary);
+      
+      // Step 3: Create enhanced summary with dynamic subject context
+      const enhancedSummary = this.createDynamicSubjectAwareSummary(
+        baseResult.summary, 
+        subjectInfo, 
+        videoTitle
+      );
+
+      console.log('✅ Fully dynamic summarization completed successfully');
+      
+      return {
+        success: true,
+        summary: enhancedSummary,
+        engine: 'dynamic-enhanced',
+        originalWordCount: baseResult.originalWordCount,
+        summaryWordCount: enhancedSummary.split(/\s+/).length,
+        targetLength: baseResult.targetLength,
+        compressionRatio: baseResult.compressionRatio,
+        validation: baseResult.validation,
+        ragContext: baseResult.ragContext,
+        confidence: baseResult.confidence,
+        // Dynamic subject detection results
+        subjects: subjectInfo.subjects,
+        primarySubject: subjectInfo.primarySubject
+      };
+      
+    } catch (error) {
+      console.error('❌ Fully dynamic summarization failed:', error);
+      return {
+        success: false,
+        error: `Dynamic summarization failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        engine: 'dynamic-enhanced'
+      };
+    }
+  }
+
+  /**
+   * Create subject-aware summary with dynamic context
+   */
+  private createDynamicSubjectAwareSummary(
+    baseSummary: string, 
+    subjectInfo: {
+      subjects: Array<{name: string, confidence: number, keywords: string[]}>,
+      primarySubject: string
+    }, 
+    videoTitle: string
+  ): string {
+    const { primarySubject, subjects } = subjectInfo;
+    
+    // Create dynamic header based on AI-detected subject
+    const header = `# ${videoTitle}\n\n**Subject Area:** ${primarySubject}\n\n`;
+    
+    // Add subject-specific context if confidence is high
+    if (subjects[0]?.confidence > 0.6) {
+      const context = `**Key Topics:** ${subjects[0].keywords.join(', ')}\n\n`;
+      return header + context + baseSummary;
+    }
+    
+    return header + baseSummary;
   }
 }
 
