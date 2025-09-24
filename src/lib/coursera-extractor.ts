@@ -81,8 +81,8 @@ export class CourseraExtractor {
       const url = window.location.href;
       let contentId = 'unknown';
       
-      const lectureMatch = url.match(/\/lecture\/([^\/]+)/);
-      const readingMatch = url.match(/\/reading\/([^\/]+)/);
+      const lectureMatch = url.match(/\/lecture\/([^/]+)/);
+      const readingMatch = url.match(/\/reading\/([^/]+)/);
       
       if (lectureMatch) {
         contentId = lectureMatch[1];

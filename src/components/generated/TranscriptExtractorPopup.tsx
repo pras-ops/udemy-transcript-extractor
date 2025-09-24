@@ -6,13 +6,15 @@ import { FileText, Sun, Moon, Download, ChevronDown, Clock, Clipboard, Play, Loc
 import { ExtensionService } from '../../lib/extension-service';
 import { StorageService } from '../../lib/storage-service';
 import { AISummarizationPopup } from './AISummarizationPopup';
+import { SummaryMode } from '../../lib/ai-summarization-service';
+import { SystemPerformanceDetector } from '../../lib/system-performance-detector';
 
 // Simple debouncing utility
-const debounce = (func: Function, wait: number) => {
+const debounce = (func: (...args: unknown[]) => void, wait: number) => {
   let timeout: NodeJS.Timeout;
-  return (...args: any[]) => {
+  return (...args: unknown[]) => {
     clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(null, args), wait);
+    timeout = setTimeout(() => func(...args), wait);
   };
 };
 
@@ -44,6 +46,15 @@ export const TranscriptExtractorPopup = () => {
   const [errorMessage, setErrorMessage] = useState<string>('');
   // Test state variables removed for production
   
+  // System performance detection
+  const [systemPerformance, setSystemPerformance] = useState<{
+    timingDisplay: string;
+    detailedTimingDisplay: string;
+  }>({
+    timingDisplay: '⏱️ Processing time varies by system performance',
+    detailedTimingDisplay: '💻 Faster systems: 45-90s | Slower systems: 90-180s'
+  });
+  
   // Batch collection states
   const [batchMode, setBatchMode] = useState<'next' | 'collect'>('next');
   const [batchProgress, setBatchProgress] = useState<{[lectureId: string]: 'pending' | 'collecting' | 'completed' | 'failed' | 'skipped'}>({});
@@ -59,6 +70,15 @@ export const TranscriptExtractorPopup = () => {
   // AI Summarization states
   const [showAIPopup, setShowAIPopup] = useState(false);
   const [aiSummary, setAiSummary] = useState<string>('');
+  
+  // AI Settings - using defaults only
+  const [aiSettings] = useState({
+    summaryMode: SummaryMode.Simple, // Default to Simple overview
+    outputFormat: 'paragraph' as 'paragraph' | 'bullet-points' | 'numbered-list',
+    useWebLLM: true, // Prefer GPU acceleration
+    includeExamples: true,
+    includeDefinitions: true
+  });
   
   const handleThemeToggle = () => {
     setIsDarkMode(!isDarkMode);
@@ -128,17 +148,34 @@ export const TranscriptExtractorPopup = () => {
     loadSavedState();
     checkPageAvailability();
     
-    // Load clipboard data from storage
-    const loadClipboardData = async () => {
+    // Initialize system performance detection
+    const initializeSystemPerformance = async () => {
       try {
-        const { clipboardData: savedData, clipboardEntries: savedEntries } = await StorageService.loadClipboardData();
-        setClipboardData(savedData);
-        setClipboardEntries(savedEntries);
-        // Loaded clipboard data from storage
+        const detector = SystemPerformanceDetector.getInstance();
+        await detector.detectSystemPerformance();
+        
+        setSystemPerformance({
+          timingDisplay: detector.getTimingDisplay(),
+          detailedTimingDisplay: detector.getDetailedTimingDisplay()
+        });
       } catch (error) {
-        console.error('Failed to load clipboard data:', error);
+        console.warn('Failed to detect system performance:', error);
+        // Keep default values if detection fails
       }
     };
+    
+    initializeSystemPerformance();
+    
+      // Load clipboard data from storage
+      const loadClipboardData = async () => {
+        try {
+          const { clipboardData: savedData, clipboardEntries: savedEntries } = await StorageService.loadClipboardData();
+          setClipboardData(savedData);
+          setClipboardEntries(savedEntries);
+        } catch (error) {
+          // Failed to load clipboard data
+        }
+      };
     
     loadClipboardData();
     
@@ -240,7 +277,8 @@ export const TranscriptExtractorPopup = () => {
       // Validate extracted transcript - reset if invalid
       if (savedState.extractedTranscript && savedState.extractedTranscript.trim().length > 0) {
         setExtractedTranscript(savedState.extractedTranscript);
-        setExtractionStatus(savedState.extractionStatus);
+        // Only restore success status if we have a valid transcript
+        setExtractionStatus(savedState.extractionStatus === 'success' ? 'success' : 'idle');
       } else {
         // Reset invalid extraction state
         setExtractedTranscript('');
@@ -258,9 +296,8 @@ export const TranscriptExtractorPopup = () => {
         setAvailability(savedState.availability);
       }
       
-      // State restored from storage
     } catch (error) {
-      console.error('Failed to load saved state:', error);
+      // Failed to load saved state
     }
   };
 
@@ -273,15 +310,13 @@ export const TranscriptExtractorPopup = () => {
       
       if (response.success && response.data) {
         setAvailability(response.data);
-        setExtractionStatus('success');
+        setExtractionStatus('idle');
         
         if (response.data.isCoursePage) {
           // Get current video info
           const videoInfo = await ExtensionService.getVideoInfo();
           if (videoInfo.success && videoInfo.data) {
             setCurrentVideo(videoInfo.data);
-          } else {
-            console.warn('Could not get video info:', videoInfo.error);
           }
           
           // Get course structure
@@ -290,7 +325,6 @@ export const TranscriptExtractorPopup = () => {
                 if (courseResponse.success && courseResponse.data) {
               setCourseStructure(courseResponse.data);
           } else {
-            console.warn('Could not get course structure:', courseResponse.error);
             setCourseStructure({ title: 'Unknown Course', sections: [] }); // Set an empty structure to indicate no data
           }
           setIsCourseStructureLoading(false);
@@ -306,7 +340,6 @@ export const TranscriptExtractorPopup = () => {
         });
       }
     } catch (error) {
-      console.error('Error checking availability:', error);
       setErrorMessage('Extension communication failed');
       setExtractionStatus('error');
       // Set default values for development/testing
@@ -319,12 +352,7 @@ export const TranscriptExtractorPopup = () => {
   };
 
   const handleExtractTranscript = async () => {
-    console.log('🎯 handleExtractTranscript called');
-    console.log('🎯 availability:', availability);
-    console.log('🎯 hasTranscript:', availability?.hasTranscript);
-    
     if (!availability?.hasTranscript) {
-      console.log('🎯 No transcript available, aborting');
       setErrorMessage('No transcript available for this video');
       setExtractionStatus('error');
       return;
@@ -335,29 +363,22 @@ export const TranscriptExtractorPopup = () => {
     setErrorMessage('');
 
     try {
-      console.log('🎯 Calling ExtensionService.extractTranscript()...');
       const response = await ExtensionService.extractTranscript();
-      console.log('🎯 ExtensionService.extractTranscript() response:', response);
-      console.log('🎯 Response success:', response.success);
-      console.log('🎯 Response data length:', response.data?.length);
-      console.log('🎯 Response error:', response.error);
       
       if (response.success && response.data) {
-        console.log('🎯 Setting extracted transcript and success status...');
         setExtractedTranscript(response.data);
         setExtractionStatus('success');
-        console.log('🎯 Extraction status set to success, transcript length:', response.data.length);
         
-        // Show success message and keep popup open for user to choose next action
-        setErrorMessage(''); // Clear any previous errors
-        
-        // Don't auto-export to prevent popup from closing
-        // User can now choose to:
-        // 1. Use AI Summarization
-        // 2. Export to clipboard/download
-        // 3. View the transcript
+        // Automatically copy transcript to clipboard
+        try {
+          const copied = await ExtensionService.copyToClipboard(response.data);
+          if (!copied) {
+            setErrorMessage('Transcript extracted but failed to copy to clipboard');
+          }
+        } catch (clipboardError) {
+          setErrorMessage('Transcript extracted but failed to copy to clipboard');
+        }
       } else {
-        console.log('🎯 Extraction failed, setting error status...');
         setErrorMessage(response.error || 'Failed to extract transcript');
         setExtractionStatus('error');
       }
@@ -371,19 +392,11 @@ export const TranscriptExtractorPopup = () => {
 
   // AI Summarization handlers
   const handleAISummarize = () => {
-    console.log('🎯 handleAISummarize called, transcript length:', extractedTranscript?.length);
-    console.log('🎯 extractionStatus:', extractionStatus);
-    console.log('🎯 extractedTranscript exists:', !!extractedTranscript);
-    console.log('🎯 extractedTranscript length:', extractedTranscript?.length);
-    
     if (!extractedTranscript || extractedTranscript.trim().length === 0) {
-      console.log('🎯 No transcript available, showing error message');
       setErrorMessage('Please extract a transcript first before generating an AI summary');
       return;
     }
-    console.log('🎯 Opening AI popup...');
     setShowAIPopup(true);
-    console.log('🎯 AI popup state set to true');
   };
 
   const handleAISummaryGenerated = (summary: string) => {
@@ -394,36 +407,66 @@ export const TranscriptExtractorPopup = () => {
     setShowAIPopup(false);
   };
 
+
   // Test functions removed for production
 
-  const handleExport = async (transcript: string) => {
+  const handleExport = async (action: 'clipboard' | 'download') => {
+    console.log('🎯 Export action:', action);
+    console.log('🎯 Extracted transcript available:', !!extractedTranscript);
+    console.log('🎯 Export format:', exportFormat);
+    console.log('🎯 Include timestamps:', includeTimestamps);
+    
+    if (!extractedTranscript) {
+      console.error('❌ No transcript available to export');
+      setErrorMessage('No transcript available to export');
+      return;
+    }
+
+    console.log('🎯 Original transcript length:', extractedTranscript.length);
+    console.log('🎯 Sample transcript content:', extractedTranscript.substring(0, 200) + '...');
+
     const formattedTranscript = ExtensionService.formatTranscript(
-      transcript,
+      extractedTranscript,
       exportFormat,
-      includeTimestamps
+      includeTimestamps,
+      currentVideo?.title
     );
 
+    console.log('🎯 Formatted transcript length:', formattedTranscript.length);
+    console.log('🎯 Sample formatted content:', formattedTranscript.substring(0, 200) + '...');
+
     try {
-      switch (exportTarget) {
-        case 'clipboard':
+      switch (action) {
+        case 'clipboard': {
+          console.log('🎯 Attempting to copy to clipboard...');
           const copied = await ExtensionService.copyToClipboard(formattedTranscript);
           if (!copied) {
+            console.error('❌ Failed to copy to clipboard');
             setErrorMessage('Failed to copy to clipboard');
+          } else {
+            setErrorMessage(''); // Clear any previous errors
+            console.log('✅ Transcript copied to clipboard successfully');
           }
           break;
+        }
 
-        case 'download':
+        case 'download': {
+          console.log('🎯 Attempting to download...');
           const filename = ExtensionService.generateFilename(
             currentVideo?.title || 'transcript',
             exportFormat
           );
           const mimeType = ExtensionService.getMimeType(exportFormat);
+          console.log('🎯 Download filename:', filename);
+          console.log('🎯 MIME type:', mimeType);
           ExtensionService.downloadFile(formattedTranscript, filename, mimeType);
+          setErrorMessage(''); // Clear any previous errors
+          console.log('✅ Transcript downloaded successfully');
           break;
-
-
+        }
       }
     } catch (error) {
+      console.error('❌ Export error:', error);
       setErrorMessage('Export failed');
     }
   };
@@ -456,10 +499,8 @@ export const TranscriptExtractorPopup = () => {
       // Copy to system clipboard
       await navigator.clipboard.writeText(newClipboardData);
       
-      console.log('🎯 Appended transcript to clipboard. Total entries:', newEntries);
       return true;
     } catch (error) {
-      console.error('Failed to append to clipboard:', error);
       setErrorMessage('Failed to append transcript to clipboard');
       return false;
     }
@@ -469,11 +510,9 @@ export const TranscriptExtractorPopup = () => {
   const handleBatchModeToggle = async () => {
     if (!isBatchCollecting) {
       // Starting batch collection
-      console.log('🎯 Batch mode toggled ON - starting batch collection');
       await handleStartBatchCollection();
     } else {
       // Stopping batch collection
-      console.log('🎯 Batch mode toggled OFF - stopping batch collection');
       setIsBatchCollecting(false);
       setBatchProgress({});
       setBatchStats({ total: 0, completed: 0, failed: 0, skipped: 0 });
@@ -482,9 +521,7 @@ export const TranscriptExtractorPopup = () => {
   };
 
   const handleStartBatchCollection = async () => {
-    console.log('🎯 Starting batch collection with course structure...');
     if (!availability?.hasTranscript) {
-      console.log('🎯 No transcript available, aborting batch collection');
       return;
     }
     
@@ -498,37 +535,30 @@ export const TranscriptExtractorPopup = () => {
       const courseResponse = await ExtensionService.extractCourseStructure();
       if (courseResponse.success && courseResponse.data && courseResponse.data.sections) {
         const totalSections = courseResponse.data.sections.length;
-        console.log('🎯 Using actual course structure - total sections:', totalSections);
         
         // Reset all counters to ensure clean start
         setBatchStats({ total: totalSections, completed: 0, failed: 0, skipped: 0 });
         setBatchProgress({});
-        console.log('🎯 Reset batch stats to zero');
         
         // Initialize current section
         const initialSection = getCurrentSectionNumber();
         setCurrentSection(initialSection.toString());
-        console.log('🎯 Batch collection started with total sections:', totalSections, 'starting from section:', initialSection);
       } else {
         // Fallback to dynamic counting if course structure not available
-        console.log('🎯 Course structure not available, using dynamic counting');
         setBatchStats({ total: 0, completed: 0, failed: 0, skipped: 0 });
         setBatchProgress({});
         
         // Initialize current section
         const initialSection = getCurrentSectionNumber();
         setCurrentSection(initialSection.toString());
-        console.log('🎯 Batch collection started with dynamic counting, starting from section:', initialSection);
       }
     } catch (error) {
-      console.log('🎯 Error setting up section counting, using dynamic counting:', error);
       setBatchStats({ total: 0, completed: 0, failed: 0, skipped: 0 });
       setBatchProgress({});
       
       // Initialize current section
       const initialSection = getCurrentSectionNumber();
       setCurrentSection(initialSection.toString());
-      console.log('🎯 Batch collection started with error fallback, starting from section:', initialSection);
     }
   };
 
@@ -582,51 +612,38 @@ export const TranscriptExtractorPopup = () => {
           const { lectureId, transcript } = response.data;
           
           // Update progress based on result
-          console.log('🎯 Updating batch progress for lecture:', lectureId, 'with transcript result:', transcript);
-          
           if (transcript === 'NO_TRANSCRIPT_AVAILABLE') {
             setBatchProgress(prev => {
               const updated = { ...prev, [lectureId]: 'skipped' as const };
-              console.log('🎯 Updated batch progress (skipped):', updated);
               return updated;
             });
             
             setBatchStats(prev => {
               const updated = { ...prev, skipped: prev.skipped + 1 };
-              console.log('🎯 Updated batch stats (skipped):', updated);
               return updated;
             });
             setProgressUpdateTrigger(prev => prev + 1); // Force re-render
           } else if (transcript === 'EXTRACTION_FAILED') {
             setBatchProgress(prev => {
               const updated = { ...prev, [lectureId]: 'failed' as const };
-              console.log('🎯 Updated batch progress (failed):', updated);
               return updated;
             });
             
             setBatchStats(prev => {
               const updated = { ...prev, failed: prev.failed + 1 };
-              console.log('🎯 Updated batch stats (failed):', updated);
               return updated;
             });
             setProgressUpdateTrigger(prev => prev + 1); // Force re-render
           } else {
             setBatchProgress(prev => {
               const updated = { ...prev, [lectureId]: 'completed' as const };
-              console.log('🎯 Updated batch progress (completed):', updated);
               return updated;
             });
             
             // Append transcript to clipboard
-            const success = await appendToClipboard(transcript, currentVideo?.title || `Lecture ${lectureId}`);
-            if (success) {
-              console.log('🎯 Transcript appended to clipboard successfully');
-            } else {
-              console.log('🎯 Failed to append transcript to clipboard');
-            }
+            await appendToClipboard(transcript, currentVideo?.title || `Lecture ${lectureId}`);
             
             // Don't increment completed count here - only increment when we move to a new section
-            console.log('🎯 Transcript collected successfully, but not incrementing section count yet');
             setProgressUpdateTrigger(prev => prev + 1); // Force re-render
           }
           
@@ -923,22 +940,9 @@ export const TranscriptExtractorPopup = () => {
         )}
       </button>
 
-      {/* AI Summarization Button */}
-      {extractionStatus === 'success' && extractedTranscript && (
-        <button 
-          onClick={handleAISummarize}
-          className="w-full py-3 px-6 rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
-        >
-          <div className="flex items-center justify-center gap-2">
-            <Sparkles className="w-5 h-5" />
-            <span>AI Summarize</span>
-          </div>
-        </button>
-      )}
-      
-
-      {/* Course Structure */}
-      <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+      {/* Course Structure - Hidden to simplify UI */}
+      {process.env.NODE_ENV === 'development' && false && (
+        <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-2 mb-3">
                       <LogIcon className="w-4 h-4 text-gray-600 dark:text-gray-400" />
           <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Course Structure</span>
@@ -978,76 +982,116 @@ export const TranscriptExtractorPopup = () => {
             <span className="text-sm text-gray-500 dark:text-gray-400">No course structure found</span>
           </div>
         )}
-      </div>
-
-      {/* Success Message */}
-      {extractionStatus === 'success' && extractedTranscript && (
-        <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
-            <span className="text-sm font-medium text-green-900 dark:text-green-100">Transcript Extracted Successfully!</span>
-          </div>
-          <p className="text-xs text-green-700 dark:text-green-300 mt-1">
-            {extractedTranscript.split('\n\n').length} entries extracted ({extractedTranscript.split(/\s+/).length} words)
-          </p>
-          <div className="mt-2 text-xs text-green-600 dark:text-green-400">
-            <p>✨ Now you can:</p>
-            <ul className="list-disc list-inside mt-1 space-y-1">
-              <li>Use AI Summarization to create a concise summary</li>
-              <li>Export to clipboard or download</li>
-              <li>View the full transcript</li>
-            </ul>
-          </div>
         </div>
+      )}
+
+      {/* AI Summarize Button - Only option after extraction */}
+      {extractionStatus === 'success' && extractedTranscript && (
+        <button
+          onClick={handleAISummarize}
+          className="w-full py-3 px-6 rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
+        >
+          <div className="flex items-center justify-center gap-2">
+            <Sparkles className="w-5 h-5" />
+            <span>🤖 AI Summarize</span>
+          </div>
+          <div className="text-xs mt-1 opacity-90 text-center">
+            Context-aware summary generation
+          </div>
+          <div className="text-xs mt-1 opacity-75 text-center">
+            {systemPerformance.timingDisplay}
+          </div>
+          <div className="text-xs mt-1 opacity-60 text-center">
+            {systemPerformance.detailedTimingDisplay}
+          </div>
+          <div className="text-xs mt-1 opacity-50 text-center">
+            ⚠️ May take longer due to system load or model initialization
+          </div>
+        </button>
       )}
     </div>;
 
   // Shared Export Options Component
-  const ExportOptionsSection = () => <div className="space-y-4">
-      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-        <span>Export Options</span>
-      </h3>
+  const ExportOptionsSection = () => <div className="space-y-4 p-4 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+          <Download className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+        </div>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+          Export Transcript
+        </h3>
+      </div>
       
       {/* Export Format */}
       <div className="space-y-2">
-        <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
-          <span>Format</span>
+        <label className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+          Choose Format
         </label>
         <div className="relative">
-          <button onClick={() => setShowFormatDropdown(!showFormatDropdown)} className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-            <span className="text-sm text-gray-700 dark:text-gray-300 capitalize">{exportFormat}</span>
-            <ChevronDown className="w-4 h-4 text-gray-500" />
+          <button 
+            onClick={() => setShowFormatDropdown(!showFormatDropdown)} 
+            className="w-full flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all duration-200 group"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
+                {exportFormat === 'rag' ? 'RAG Format' : exportFormat.toUpperCase()}
+              </span>
+            </div>
+            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showFormatDropdown ? 'rotate-180' : ''}`} />
           </button>
           
-                     {showFormatDropdown && <div className="absolute top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10">
-               {['markdown', 'txt', 'json', 'rag'].map(format => <button key={format} onClick={() => {
-             setExportFormat(format as 'markdown' | 'txt' | 'json' | 'rag');
-             setShowFormatDropdown(false);
-           }} className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg capitalize">
-                   <span>{format === 'rag' ? 'RAG' : format}</span>
-                 </button>)}
-             </div>}
+          {showFormatDropdown && (
+            <div className="absolute top-full mt-2 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-xl z-20 overflow-hidden">
+              {['markdown', 'txt', 'json', 'rag'].map((format, index) => (
+                <button 
+                  key={format} 
+                  onClick={() => {
+                    setExportFormat(format as 'markdown' | 'txt' | 'json' | 'rag');
+                    setShowFormatDropdown(false);
+                  }} 
+                  className={`w-full px-4 py-3 text-left text-sm font-medium transition-colors duration-150 ${
+                    exportFormat === format 
+                      ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300' 
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  } ${index === 0 ? 'rounded-t-xl' : ''} ${index === 3 ? 'rounded-b-xl' : ''}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${exportFormat === format ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
+                    <span>{format === 'rag' ? 'RAG Format' : format.toUpperCase()}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Include Timestamps Toggle - Hidden for now */}
-      {/* <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-        <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4 text-gray-500" />
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Include Timestamps</span>
-        </div>
-        <button onClick={() => setIncludeTimestamps(!includeTimestamps)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${includeTimestamps ? 'bg-[#4CAF50]' : 'bg-gray-300 dark:bg-gray-600'}`}>
-          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${includeTimestamps ? 'translate-x-6' : 'translate-x-1'}`} />
+      {/* Export Actions */}
+      <div className="flex gap-3 pt-2">
+        <button
+          onClick={() => handleExport('clipboard')}
+          className="flex-1 flex items-center justify-center gap-2 p-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+        >
+          <Clipboard className="w-4 h-4" />
+          <span className="text-sm">Copy</span>
         </button>
-      </div> */}
-
+        
+        <button
+          onClick={() => handleExport('download')}
+          className="flex-1 flex items-center justify-center gap-2 p-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+        >
+          <Download className="w-4 h-4" />
+          <span className="text-sm">Download</span>
+        </button>
+      </div>
 
     </div>;
 
 
   return (
     <>
-      <div className="w-[400px] h-[600px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
+      <div className="w-[400px] h-[700px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
       {/* Header */}
       <header className="flex items-center justify-between p-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
                  <div className="flex items-center space-x-3">
@@ -1072,7 +1116,10 @@ export const TranscriptExtractorPopup = () => {
       <main className="flex-1 overflow-y-auto">
         <div className="p-6 space-y-6">
             <ExtractSection />
-            <ExportOptionsSection />
+            {/* Show export options only after successful extraction */}
+            {extractionStatus === 'success' && extractedTranscript && (
+              <ExportOptionsSection />
+            )}
             </div>
       </main>
 
@@ -1096,14 +1143,12 @@ export const TranscriptExtractorPopup = () => {
 
       {/* AI Summarization Popup */}
       {showAIPopup && (
-        <>
-          {console.log('🎯 Rendering AISummarizationPopup with transcript length:', extractedTranscript?.length)}
-          <AISummarizationPopup
-            transcript={extractedTranscript}
-            onClose={handleCloseAIPopup}
-            onSummaryGenerated={handleAISummaryGenerated}
-          />
-        </>
+        <AISummarizationPopup
+          transcript={extractedTranscript}
+          onClose={handleCloseAIPopup}
+          onSummaryGenerated={handleAISummaryGenerated}
+          initialSettings={aiSettings}
+        />
       )}
     </>
   );

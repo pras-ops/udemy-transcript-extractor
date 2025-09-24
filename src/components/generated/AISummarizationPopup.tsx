@@ -7,7 +7,6 @@ import {
   X, 
   Copy, 
   Download, 
-  Settings, 
   Cpu, 
   Zap, 
   AlertCircle, 
@@ -15,41 +14,44 @@ import {
   Loader2,
   Info
 } from 'lucide-react';
-import { aiSummarizationService, SummarizationOptions, SummarizationResult } from '../../lib/ai-summarization-service';
+import { aiSummarizationService, SummarizationOptions, SummarizationResult, SummaryMode } from '../../lib/ai-summarization-service';
 
 interface AISummarizationPopupProps {
   transcript: string;
   onClose: () => void;
   onSummaryGenerated?: (summary: string) => void;
+  initialSettings?: {
+    summaryMode?: SummaryMode;
+    outputFormat?: 'paragraph' | 'bullet-points' | 'numbered-list';
+    useWebLLM?: boolean;
+    includeExamples?: boolean;
+    includeDefinitions?: boolean;
+  };
 }
 
 export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
   transcript,
   onClose,
-  onSummaryGenerated
+  onSummaryGenerated,
+  initialSettings
 }) => {
   console.log('🎯 AISummarizationPopup: Component mounted with transcript length:', transcript?.length);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summary, setSummary] = useState<string>('');
   const [error, setError] = useState<string>('');
-  const [engine, setEngine] = useState<'webllm' | 'transformers' | 'mock' | 'enhanced' | null>(null);
+  const [engine, setEngine] = useState<'webllm' | 'transformers' | 'mock' | 'enhanced' | 'simple' | 'rag-enhanced' | 'enhanced-local' | 'error' | null>(null);
   const [options, setOptions] = useState<SummarizationOptions>({
-    maxLength: 150,
-    minLength: 50,
-    useWebLLM: true,
-    compressionPercentage: 10, // Default: retain 10% of original (more aggressive compression)
-    maxLengthCap: 1000,
-    outputFormat: 'paragraph',
-    targetWordCount: 300,
-    includeExamples: true,
-    includeDefinitions: true,
+    summaryMode: initialSettings?.summaryMode ?? SummaryMode.Simple, // Default: Simple overview
+    useWebLLM: initialSettings?.useWebLLM ?? true, // Enable AI engines for better summarization
+    outputFormat: initialSettings?.outputFormat ?? 'paragraph',
+    includeExamples: initialSettings?.includeExamples ?? true,
+    includeDefinitions: initialSettings?.includeDefinitions ?? true,
     focusAreas: []
   });
-  const [showSettings, setShowSettings] = useState(false);
   const [availableEngines, setAvailableEngines] = useState<{ webllm: boolean; transformers: boolean; mock: boolean }>({
-    webllm: false,
-    transformers: false,
-    mock: true
+    webllm: true, // AI engines restored for better summarization
+    transformers: true, // AI engines restored for better summarization
+    mock: true // Local processing always available
   });
   const [setupInstructions, setSetupInstructions] = useState<string>('');
   const [wordCountInfo, setWordCountInfo] = useState<{
@@ -59,15 +61,30 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
     compressionRatio?: number;
   } | null>(null);
 
-  // Load saved settings from storage
+  // Load saved settings from storage, but prioritize initialSettings
   const loadSavedSettings = async () => {
     try {
       const result = await chrome.storage.local.get(['aiSummarizationSettings']);
       if (result.aiSummarizationSettings) {
-        setOptions(result.aiSummarizationSettings);
+        // Merge saved settings with initialSettings, giving priority to initialSettings
+        const mergedSettings = {
+          ...result.aiSummarizationSettings,
+          ...initialSettings
+        };
+        setOptions(mergedSettings);
+        console.log('🎯 AISummarizationPopup: Loaded merged settings:', mergedSettings);
+      } else if (initialSettings) {
+        // If no saved settings but we have initialSettings, use them
+        setOptions(prev => ({ ...prev, ...initialSettings }));
+        console.log('🎯 AISummarizationPopup: Using initialSettings:', initialSettings);
       }
     } catch (error) {
       console.log('Could not load saved settings, using defaults');
+      // Fallback to initialSettings if available
+      if (initialSettings) {
+        setOptions(prev => ({ ...prev, ...initialSettings }));
+        console.log('🎯 AISummarizationPopup: Fallback to initialSettings:', initialSettings);
+      }
     }
   };
 
@@ -82,13 +99,14 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
 
   useEffect(() => {
     console.log('🎯 AISummarizationPopup: useEffect mount');
+    console.log('🎯 AISummarizationPopup: initialSettings:', initialSettings);
     
-    // Load saved settings first
+    // Load saved settings first (this will now prioritize initialSettings)
     loadSavedSettings();
     
-    // Check available engines on mount
-    const engines = aiSummarizationService.getAvailableEngines();
-    console.log('🎯 Available engines from service:', engines);
+    // Set engines to local-only mode (privacy-first approach)
+    const engines = { webllm: false, transformers: false, mock: true };
+    console.log('🎯 Privacy-first mode: Local processing only');
     setAvailableEngines(engines);
     
     // Get setup instructions
@@ -98,14 +116,18 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
     // Test the service directly
     console.log('🎯 Testing AI service directly...');
     aiSummarizationService.summarizeTranscript('Test transcript for debugging', {
-      compressionPercentage: 60,
-      maxLengthCap: 1000
+      summaryMode: SummaryMode.Simple
     }).then(result => {
       console.log('🎯 Direct test result:', result);
     }).catch(error => {
       console.log('🎯 Direct test error:', error);
     });
-  }, []);
+  }, [initialSettings]); // Add initialSettings as dependency
+
+  // Track engine state changes for debugging
+  useEffect(() => {
+    console.log('🎯 AISummarizationPopup: Engine state changed to:', engine);
+  }, [engine]);
 
   // Auto-start summarization when transcript is provided
   useEffect(() => {
@@ -129,6 +151,8 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
     console.log('🎯 AISummarizationPopup: handleSummarize called');
     console.log('🎯 AISummarizationPopup: transcript length:', transcript?.length);
     console.log('🎯 AISummarizationPopup: options:', options);
+    console.log('🎯 AISummarizationPopup: summaryMode:', options.summaryMode);
+    console.log('🎯 AISummarizationPopup: outputFormat:', options.outputFormat);
     
     if (!transcript || transcript.trim().length === 0) {
       console.log('🎯 AISummarizationPopup: No transcript provided');
@@ -143,6 +167,7 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
 
     try {
       console.log('🎯 AISummarizationPopup: Calling aiSummarizationService.summarizeTranscript...');
+      console.log('🎯 AISummarizationPopup: Final options being passed:', options);
       const result: SummarizationResult = await aiSummarizationService.summarizeTranscript(
         transcript,
         options
@@ -151,6 +176,7 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
 
       if (result.success && result.summary) {
         console.log('🎯 AISummarizationPopup: Summary generated successfully');
+        console.log('🎯 AISummarizationPopup: Engine received:', result.engine);
         setSummary(result.summary);
         setEngine(result.engine || null);
         
@@ -225,6 +251,14 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
         return 'Basic Summary (Mock)';
       case 'enhanced':
         return 'Enhanced Summary (Local)';
+      case 'simple':
+        return 'Enhanced Summary (Local)';
+      case 'rag-enhanced':
+        return 'RAG-Enhanced AI (Local)';
+      case 'enhanced-local':
+        return 'Enhanced Local Processing';
+      case 'error':
+        return 'Processing Error';
       default:
         return 'Unknown';
     }
@@ -250,17 +284,6 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowSettings(!showSettings)}
-              className={`p-3 rounded-xl transition-all duration-200 ${
-                showSettings 
-                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' 
-                  : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400'
-              }`}
-              title="Settings"
-            >
-              <Settings className="w-5 h-5" />
-            </button>
-            <button
               onClick={onClose}
               className="p-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 transition-all duration-200"
             >
@@ -269,257 +292,6 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
           </div>
         </div>
 
-        {/* Settings Panel */}
-        {showSettings && (
-          <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-b border-gray-200 dark:border-gray-700 animate-in slide-in-from-top-2 duration-200">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <Settings className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-              Summarization Settings
-            </h3>
-            <div className="space-y-4">
-              {/* Compression Percentage */}
-              <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                    <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-900 dark:text-white">
-                      Compression Level
-                    </label>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      How much of original text to retain ({options.compressionPercentage}%)
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      Retain {options.compressionPercentage}% of original
-                    </div>
-                    <div className="text-sm font-bold text-blue-600 dark:text-blue-400">
-                      {options.compressionPercentage}%
-                    </div>
-                  </div>
-                  <input
-                    type="range"
-                    value={options.compressionPercentage}
-                    onChange={(e) => {
-                      const newOptions = { ...options, compressionPercentage: parseInt(e.target.value) };
-                      setOptions(newOptions);
-                      saveSettings(newOptions);
-                    }}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-                    min="30"
-                    max="90"
-                    style={{
-                      background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((options.compressionPercentage - 30) / 60) * 100}%, #e5e7eb ${((options.compressionPercentage - 30) / 60) * 100}%, #e5e7eb 100%)`
-                    }}
-                  />
-                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                    <span>30% (Condensed)</span>
-                    <span>90% (Detailed)</span>
-                  </div>
-                </div>
-              </div>
-
-
-              {/* Max Length Cap */}
-              <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-                    <span className="text-orange-600 dark:text-orange-400 text-xs font-bold">MAX</span>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-900 dark:text-white">
-                      Maximum Length Cap
-                    </label>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Maximum words allowed in summary
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      Cap at {options.maxLengthCap} words
-                    </div>
-                    <div className="text-sm font-bold text-orange-600 dark:text-orange-400">
-                      {options.maxLengthCap}
-                    </div>
-                  </div>
-                  <input
-                    type="range"
-                    value={options.maxLengthCap}
-                    onChange={(e) => {
-                      const newOptions = { ...options, maxLengthCap: parseInt(e.target.value) };
-                      setOptions(newOptions);
-                      saveSettings(newOptions);
-                    }}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-                    min="200"
-                    max="2000"
-                    style={{
-                      background: `linear-gradient(to right, #f97316 0%, #f97316 ${((options.maxLengthCap - 200) / 1800) * 100}%, #e5e7eb ${((options.maxLengthCap - 200) / 1800) * 100}%, #e5e7eb 100%)`
-                    }}
-                  />
-                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                    <span>200 words</span>
-                    <span>2000 words</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Engine Selection */}
-              <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                      <Zap className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-900 dark:text-white">
-                        Use WebLLM (GPU)
-                      </label>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {availableEngines.webllm ? 'Available - GPU accelerated' : 'Not available - requires WebGPU'}
-                      </p>
-                    </div>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={options.useWebLLM && availableEngines.webllm}
-                      onChange={(e) => {
-                        const newOptions = { ...options, useWebLLM: e.target.checked };
-                        setOptions(newOptions);
-                        saveSettings(newOptions);
-                      }}
-                      disabled={!availableEngines.webllm}
-                      className="sr-only peer"
-                    />
-                    <div className={`w-11 h-6 rounded-full peer transition-all ${
-                      availableEngines.webllm 
-                        ? 'bg-gray-200 peer-checked:bg-purple-600 dark:bg-gray-700' 
-                        : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed'
-                    } peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:peer-focus:ring-purple-800 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600`}></div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Output Format */}
-              <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                    <Settings className="w-4 h-4 text-green-600 dark:text-green-400" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-900 dark:text-white">
-                      Output Format
-                    </label>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      How to structure the summary
-                    </p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { value: 'paragraph', label: 'Paragraph', icon: '📝' },
-                    { value: 'bullet-points', label: 'Bullet Points', icon: '•' },
-                    { value: 'numbered-list', label: 'Numbered List', icon: '1.' }
-                  ].map((format) => (
-                    <button
-                      key={format.value}
-                      onClick={() => {
-                        const newOptions = { ...options, outputFormat: format.value as any };
-                        setOptions(newOptions);
-                        saveSettings(newOptions);
-                      }}
-                      className={`p-3 rounded-lg border text-sm font-medium transition-all ${
-                        options.outputFormat === format.value
-                          ? 'bg-green-100 border-green-500 text-green-700 dark:bg-green-900/30 dark:border-green-400 dark:text-green-300'
-                          : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      <div className="text-lg mb-1">{format.icon}</div>
-                      <div>{format.label}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Content Options */}
-              <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-                    <Info className="w-4 h-4 text-orange-600 dark:text-orange-400" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-900 dark:text-white">
-                      Content Options
-                    </label>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      What to include in the summary
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={options.includeExamples || false}
-                      onChange={(e) => {
-                        const newOptions = { ...options, includeExamples: e.target.checked };
-                        setOptions(newOptions);
-                        saveSettings(newOptions);
-                      }}
-                      className="w-4 h-4 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500 dark:focus:ring-orange-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                    />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Include examples</span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={options.includeDefinitions || false}
-                      onChange={(e) => {
-                        const newOptions = { ...options, includeDefinitions: e.target.checked };
-                        setOptions(newOptions);
-                        saveSettings(newOptions);
-                      }}
-                      className="w-4 h-4 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500 dark:focus:ring-orange-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                    />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Include key definitions</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                  <Info className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
-                  <p><strong>Compression Level:</strong> Retains {options.compressionPercentage}% of original transcript length</p>
-                  <p><strong>WebLLM:</strong> {availableEngines.webllm ? 'Available (GPU accelerated)' : 'Not available (requires WebGPU)'}</p>
-                  <p><strong>Transformers.js:</strong> {availableEngines.transformers ? 'Available (CPU)' : 'Not available (library not loaded)'}</p>
-                  <p><strong>Basic Summary:</strong> Available (extractive summarization)</p>
-                </div>
-              </div>
-            </div>
-            
-            {!availableEngines.webllm && !availableEngines.transformers && (
-              <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5" />
-                  <div className="text-xs text-yellow-800 dark:text-yellow-200">
-                    <p className="font-medium mb-1">AI Libraries Not Installed</p>
-                    <p>Currently using basic extractive summarization. For full AI capabilities, install the required libraries.</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
@@ -595,9 +367,9 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
                           </div>
                           <span className="text-gray-700 dark:text-gray-300">
                             {wordCountInfo.target ? (
-                              <span>{wordCountInfo.target} words ({options.compressionPercentage}% retention)</span>
+                              <span>{wordCountInfo.target} words ({options.summaryMode === SummaryMode.Simple ? 'Simple Overview' : 'Study Notes'})</span>
                             ) : (
-                              <span>Compression mode</span>
+                              <span>{options.summaryMode === SummaryMode.Simple ? 'Simple Overview' : 'Study Notes'} mode</span>
                             )}
                           </span>
                         </div>
@@ -741,27 +513,25 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
                 </div>
               )}
 
-              {/* Setup Instructions */}
-              {(!availableEngines.webllm && !availableEngines.transformers) && (
-                <div className="p-6 bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 rounded-xl border border-yellow-200 dark:border-yellow-800">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                      <span className="text-yellow-600 dark:text-yellow-400 text-lg">🚀</span>
-                    </div>
-                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
-                      Enable Full AI Summarization
-                    </h4>
+              {/* Privacy-First Information */}
+              <div className="p-6 bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 rounded-xl border border-green-200 dark:border-green-800">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                    <span className="text-green-600 dark:text-green-400 text-lg">🔒</span>
                   </div>
-                  <div className="text-sm text-gray-700 dark:text-gray-300 space-y-3">
-                    <p>To enable advanced AI summarization with WebLLM or Transformers.js:</p>
-                    <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <pre className="whitespace-pre-wrap text-xs font-mono text-gray-600 dark:text-gray-400">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Privacy-First Processing
+                  </h4>
+                </div>
+                <div className="text-sm text-gray-700 dark:text-gray-300 space-y-3">
+                  <p>This extension prioritizes your privacy by processing all data locally:</p>
+                  <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <pre className="whitespace-pre-wrap text-xs font-mono text-gray-600 dark:text-gray-400">
 {setupInstructions}
-                      </pre>
-                    </div>
+                    </pre>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           )}
         </div>
@@ -784,19 +554,11 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
               </div>
             </div>
             <div className="flex items-center justify-center gap-3 text-xs">
-              {availableEngines.webllm && (
-                <div className="flex items-center gap-1.5">
-                  <div className="p-1 bg-purple-100 dark:bg-purple-900/30 rounded">
-                    <Zap className="w-3 h-3 text-purple-500" />
-                  </div>
-                  <span className="text-gray-600 dark:text-gray-400 font-medium">WebLLM</span>
-                </div>
-              )}
               <div className="flex items-center gap-1.5">
                 <div className="p-1 bg-blue-100 dark:bg-blue-900/30 rounded">
                   <Cpu className="w-3 h-3 text-blue-500" />
                 </div>
-                <span className="text-gray-600 dark:text-gray-400 font-medium">Transformers.js</span>
+                <span className="text-gray-600 dark:text-gray-400 font-medium">Enhanced Local</span>
               </div>
             </div>
           </div>

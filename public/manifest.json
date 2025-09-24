@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Transcript Extractor",
-  "version": "3.1.0",
+  "version": "3.4.0",
   "description": "Extract transcripts from educational platforms like Udemy, Coursera, YouTube, and more",
   "permissions": [
     "activeTab",
     "storage",
     "clipboardWrite",
     "scripting",
-    "offscreen"
+    "offscreen",
+    "alarms"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
@@ -20,9 +21,7 @@
     "https://www.youtube.com/*",
     "https://video.google.com/*",
     "https://*.edx.org/*",
-    "https://*.pluralsight.com/*",
-    "https://huggingface.co/*",
-    "https://cdn.jsdelivr.net/*"
+    "https://*.pluralsight.com/*"
   ],
   "action": {
     "default_popup": "index.html",
@@ -46,7 +45,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["sw.js", "udemy-extractor.js", "offscreen.html", "offscreen.js", "index.js", "transformers.js"],
+      "resources": ["sw.js", "udemy-extractor.js", "index.js", "offscreen.html", "offscreen.js"],
       "matches": ["https://*.udemy.com/*", "https://*.coursera.org/*", "https://*.youtube.com/*", "https://*.edx.org/*", "https://*.pluralsight.com/*"]
     }
   ]

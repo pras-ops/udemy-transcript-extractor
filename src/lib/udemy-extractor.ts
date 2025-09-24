@@ -663,7 +663,7 @@ export class UdemyExtractor {
       }
 
       // Find best track (captions/subtitles preferred)
-      let preferredTrack = tracks.find(t => t.kind === 'captions') || 
+      const preferredTrack = tracks.find(t => t.kind === 'captions') || 
                           tracks.find(t => t.kind === 'subtitles') || 
                           tracks[0];
       

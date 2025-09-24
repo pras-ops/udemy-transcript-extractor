@@ -90,50 +90,59 @@ class ContentScript {
     try {
       
       switch (message.type) {
-        case 'EXTRACT_COURSE_STRUCTURE':
+        case 'EXTRACT_COURSE_STRUCTURE': {
           const courseStructure = await this.extractCourseStructure();
           sendResponse({ success: true, data: courseStructure });
           break;
+        }
 
-        case 'EXTRACT_TRANSCRIPT':
+        case 'EXTRACT_TRANSCRIPT': {
           const transcript = await this.extractTranscript();
           sendResponse({ success: true, data: transcript });
           break;
+        }
 
-        case 'TEST_COURSE_STRUCTURE':
+        case 'TEST_COURSE_STRUCTURE': {
           UdemyExtractor.testCourseStructureSelectors();
           sendResponse({ success: true, data: 'Course structure testing completed - check console' });
           break;
+        }
 
-        case 'GET_VIDEO_INFO':
+        case 'GET_VIDEO_INFO': {
           const videoInfo = this.getVideoInfo();
           sendResponse({ success: true, data: videoInfo });
           break;
+        }
 
-        case 'CHECK_AVAILABILITY':
+        case 'CHECK_AVAILABILITY': {
           const availability = this.checkAvailability();
           sendResponse({ success: true, data: availability });
           break;
+        }
 
-        case 'START_BATCH_COLLECTION':
+        case 'START_BATCH_COLLECTION': {
           await this.startBatchCollection(message.data?.lectureIds || []);
           sendResponse({ success: true });
           break;
+        }
 
-        case 'NAVIGATE_TO_NEXT_LECTURE':
+        case 'NAVIGATE_TO_NEXT_LECTURE': {
           const navigationResult = await this.navigateToNextLecture();
           sendResponse({ success: true, data: navigationResult });
           break;
+        }
 
-        case 'COLLECT_CURRENT_TRANSCRIPT':
+        case 'COLLECT_CURRENT_TRANSCRIPT': {
           const collectionResult = await this.collectCurrentTranscript();
           sendResponse({ success: true, data: collectionResult });
           break;
+        }
 
-        case 'EXPORT_BATCH_TRANSCRIPTS':
+        case 'EXPORT_BATCH_TRANSCRIPTS': {
           const exportResult = await this.exportBatchTranscripts(message.data?.format || 'txt');
           sendResponse({ success: true, data: exportResult });
           break;
+        }
 
         default:
           sendResponse({ success: false, error: 'Unknown message type' });

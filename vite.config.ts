@@ -24,6 +24,13 @@ export default defineConfig({
         entryFileNames: '[name].js',
         chunkFileNames: '[name].js',
         assetFileNames: '[name].[ext]'
+      },
+      external: (id) => {
+        // Bundle AI libraries for offscreen document (don't externalize)
+        if (id.includes('@mlc-ai/web-llm') || id.includes('@xenova/transformers')) {
+          return false; // Bundle these libraries
+        }
+        return false; // Bundle everything else too
       }
     }
   }

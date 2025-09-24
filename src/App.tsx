@@ -2,12 +2,11 @@ import { useMemo } from 'react';
 import { Container, Theme } from './settings/types';
 import { TranscriptExtractorPopup } from './components/generated/TranscriptExtractorPopup';
 
-let theme: Theme = 'light';
+const theme: Theme = 'light';
 // only use 'centered' container for standalone components, never for full page apps or websites.
-let container: Container = 'none';
+const container: Container = 'none';
 
 function App() {
-  console.log('🎯 App.tsx: App component is rendering!');
   
   function setTheme(theme: Theme) {
     if (theme === 'dark') {

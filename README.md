@@ -3,7 +3,7 @@
 A powerful Chrome extension that automatically extracts and collects transcripts from educational video platforms with **AI-powered summarization**. Built for AI enthusiasts who need quick access to educational content for tools like NotebookLLM, ChatGPT, and other AI platforms.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-blue?logo=google-chrome)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/version-3.1.0-green.svg)](https://github.com/your-username/transcript-extractor)
+[![Version](https://img.shields.io/badge/version-3.2.4-green.svg)](https://github.com/your-username/transcript-extractor)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![AI Powered](https://img.shields.io/badge/AI-Powered-purple?logo=openai)](https://github.com/your-username/transcript-extractor)
 
@@ -159,11 +159,26 @@ flowchart TD
 - Start extracting transcripts immediately
 
 ### **Option 2: Manual Installation (Developer Mode)**
-1. **Download** the extension files
+1. **Build** the extension from source (see Option 3 below)
 2. **Open Chrome** and go to `chrome://extensions/`
 3. **Enable** "Developer mode" (top right toggle)
-4. **Click** "Load unpacked" and select the extension folder
+4. **Click** "Load unpacked" and select the `dist` folder
 5. **Pin** the extension to your toolbar for easy access
+
+### **Option 3: Build from Source**
+```bash
+# Clone the repository
+git clone https://github.com/your-username/transcript-extractor.git
+cd transcript-extractor
+
+# Install dependencies
+npm install
+
+# Build the extension
+npm run build
+
+# Load the dist folder in Chrome extensions
+```
 
 ## 📖 Usage Guide
 
@@ -490,7 +505,7 @@ We welcome contributions! Here's how you can help:
 
 ## 📊 Project Status
 
-### **Current Status: v3.1.0 Release**
+### **Current Status: v3.2.4 Release**
 - ✅ All core features working
 - ✅ AI summarization fully implemented
 - ✅ User-tested and refined
@@ -564,6 +579,51 @@ graph TD
 - **Advanced Analytics** - Cross-platform learning insights and progress tracking
 - **Smart Recommendations** - AI-powered course and content suggestions
 
+## 🚀 Deployment
+
+### **Ready-to-Deploy Package**
+The extension is ready for deployment by building from source:
+- **Build Command**: `npm run build`
+- **Output**: `dist/` folder with complete extension
+- **Size**: ~3.7MB (includes all AI libraries)
+- **Contents**: Complete extension with all features
+
+### **Deployment Instructions**
+
+#### **For Chrome Web Store**
+1. Build the extension: `npm run build`
+2. Zip the `dist/` folder contents
+3. Upload to Chrome Web Store Developer Dashboard
+4. Fill in store listing details
+5. Submit for review
+
+#### **For Enterprise/Internal Use**
+1. Build the extension: `npm run build`
+2. Distribute the `dist/` folder to users
+3. Users can load via Developer Mode
+4. Or package as zip for IT deployment tools
+
+#### **For Testing/Development**
+1. Build the extension: `npm run build`
+2. Load in Chrome via `chrome://extensions/`
+3. Enable Developer Mode
+4. Click "Load unpacked" and select `dist/` folder
+
+### **Package Contents**
+```
+dist/
+├── manifest.json          # Extension manifest
+├── background.js          # Background service worker
+├── content-script.js      # Content script for page interaction
+├── offscreen.js          # AI processing worker
+├── transformers.js       # AI library bundle
+├── index.js             # Main extension bundle
+├── main.js              # UI components
+├── main.css             # Styling
+├── index.html           # Extension popup
+└── icons/               # Extension icons
+```
+
 ## 📄 License
 
 This project is open source and available under the [MIT License](LICENSE).
@@ -623,6 +683,40 @@ This project is open source and available under the [MIT License](LICENSE).
 **⭐ If you find this extension helpful for your AI workflows, please give it a star on GitHub!**
 
 ---
+
+## 🎉 **What's New in v3.2.4**
+
+### **🔧 Code Quality & Stability**
+- **ESLint Compliance** - Fixed all ESLint errors and warnings for better code quality
+- **TypeScript Improvements** - Enhanced type safety and error handling
+- **Performance Optimizations** - Improved AI processing and system performance detection
+- **Bug Fixes** - Resolved export functionality and UI flow issues
+- **Clean Codebase** - Removed all TestSprite dependencies and old deployment files
+
+### **🎨 Enhanced User Experience**
+- **Fixed Export Section** - Export functionality now works correctly with all formats
+- **Improved AI Summarization** - Fixed generic content generation to analyze actual transcript content
+- **Better Error Handling** - More robust error handling and user feedback
+- **Enhanced RAG Format** - Added video title metadata for better context and organization
+
+## 🎉 **What's New in v3.2.0**
+
+### **🎨 Modern Export Section**
+- **Beautiful Export Interface** - Redesigned export section with modern gradients and animations
+- **Enhanced Format Dropdown** - Improved format selection with visual indicators and smooth animations
+- **Premium Action Buttons** - Gradient buttons with hover effects and micro-interactions
+- **Better UX** - Improved spacing, typography, and visual hierarchy
+
+### **⚡ System Performance Detection**
+- **Smart Timing Estimates** - Dynamic processing time based on your system performance
+- **Hardware Detection** - Automatically detects CPU cores, memory, and graphics capabilities
+- **Performance Benchmarking** - Runs CPU tests to provide accurate timing estimates
+- **Tier-based Display** - Shows system tier (Ultra/High/Medium/Low) with appropriate timing
+
+### **🔧 Improved Flow Control**
+- **Proper Button Sequence** - Export section only appears after successful transcript extraction
+- **Better State Management** - Fixed conditional rendering and state persistence
+- **Enhanced Error Handling** - More robust error handling and user feedback
 
 ## 🎉 **What's New in v3.1.1**
 

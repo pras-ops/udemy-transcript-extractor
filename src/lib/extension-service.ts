@@ -166,7 +166,7 @@ export class ExtensionService {
   /**
    * Format transcript for different export types
    */
-  static formatTranscript(transcript: string, format: 'markdown' | 'txt' | 'json' | 'rag', includeTimestamps: boolean = true): string {
+  static formatTranscript(transcript: string, format: 'markdown' | 'txt' | 'json' | 'rag', includeTimestamps: boolean = true, videoTitle?: string): string {
     // Sanitize input first
     const cleanTranscript = this.sanitizeText(transcript);
     
@@ -176,7 +176,7 @@ export class ExtensionService {
       case 'json':
         return this.formatAsJSON(cleanTranscript, includeTimestamps);
       case 'rag':
-        return this.formatAsRAG(cleanTranscript, includeTimestamps);
+        return this.formatAsRAG(cleanTranscript, includeTimestamps, videoTitle);
       case 'txt':
       default:
         return this.formatAsText(cleanTranscript, includeTimestamps);
@@ -227,7 +227,7 @@ export class ExtensionService {
     }
   }
 
-  private static formatAsRAG(transcript: string, includeTimestamps: boolean): string {
+  private static formatAsRAG(transcript: string, includeTimestamps: boolean, videoTitle?: string): string {
     const lines = transcript.split('\n\n');
     
     // Clean and prepare transcript lines
@@ -281,6 +281,7 @@ export class ExtensionService {
         chunk_index: index + 1,
         source: 'video_transcript',
         type: 'educational_content',
+        video_title: videoTitle || 'Unknown Video',
         word_count: chunk.split(/\s+/).length
       }
     }));
@@ -291,11 +292,17 @@ export class ExtensionService {
       chunks: ragChunks,
       metadata: {
         extraction_date: new Date().toISOString(),
-        format_version: '2.1',
+        format_version: '2.2',
         rag_optimized: true,
         chunking_strategy: 'smart_word_based',
         target_words_per_chunk: 55,
-        total_words: cleanLines.join(' ').split(/\s+/).length
+        total_words: cleanLines.join(' ').split(/\s+/).length,
+        video_title: videoTitle || 'Unknown Video',
+        video_info: {
+          title: videoTitle || 'Unknown Video',
+          platform: 'udemy',
+          content_type: 'educational_video'
+        }
       }
     }, null, 2);
   }

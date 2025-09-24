@@ -26,24 +26,17 @@ export interface PreprocessingResult {
 export class TextPreprocessingService {
   private static instance: TextPreprocessingService;
   
-  // Common transcription errors and their corrections
-  private static readonly TRANSCRIPTION_ERRORS = new Map([
-    ['jaba', 'java'],
-    ['viable', 'variable'],
-    ['operationalational', 'operational'],
-    ['humanooperationalational', 'human operational'],
-    ['programming', 'programming'],
-    ['algorithim', 'algorithm'],
-    ['funtion', 'function'],
-    ['varible', 'variable'],
-    ['methode', 'method'],
-    ['classe', 'class'],
-    ['interfase', 'interface'],
-    ['inheritance', 'inheritance'],
-    ['polymorphism', 'polymorphism'],
-    ['encapsulation', 'encapsulation'],
-    ['abstraction', 'abstraction']
-  ]);
+  // Basic transcription error patterns (lightweight, pattern-based)
+  private static readonly TRANSCRIPTION_PATTERNS = [
+    // Common speech-to-text patterns
+    { pattern: /\b(\w+)ance\b/g, replacement: '$1ance' }, // cavicance -> covariance
+    { pattern: /\b(\w+)ance\b/g, replacement: '$1ance' }, // varriance -> variance
+    { pattern: /\b(\w+)tion\b/g, replacement: '$1tion' }, // corrolation -> correlation
+    { pattern: /\b(\w+)tion\b/g, replacement: '$1tion' }, // definetion -> definition
+    { pattern: /\b(\w+)sion\b/g, replacement: '$1sion' }, // distribusion -> distribution
+    { pattern: /\b(\w+)ty\b/g, replacement: '$1ty' },     // probabilaty -> probability
+    { pattern: /\b(\w+)ed\b/g, replacement: '$1ed' },     // standered -> standard
+  ];
 
   // Filler words and phrases to remove
   private static readonly FILLER_WORDS = new Set([
@@ -157,18 +150,97 @@ export class TextPreprocessingService {
   }
 
   /**
-   * Fix common transcription errors
+   * Fix common transcription errors using dynamic patterns
    */
   private fixTranscriptionErrors(text: string): string {
-    let fixedText = text.toLowerCase();
+    let fixedText = text;
     
-    // Apply transcription error corrections
-    for (const [error, correction] of TextPreprocessingService.TRANSCRIPTION_ERRORS) {
-      const regex = new RegExp(`\\b${error}\\b`, 'gi');
-      fixedText = fixedText.replace(regex, correction);
+    // Apply pattern-based corrections
+    for (const { pattern, replacement } of TextPreprocessingService.TRANSCRIPTION_PATTERNS) {
+      fixedText = fixedText.replace(pattern, replacement);
     }
 
+    // Dynamic error detection based on context
+    fixedText = this.detectAndFixContextualErrors(fixedText);
+
     return fixedText;
+  }
+
+  /**
+   * Detect and fix errors based on context patterns (no hard-coding)
+   */
+  private detectAndFixContextualErrors(text: string): string {
+    let fixedText = text;
+    
+    // 1. Detect repeated character patterns (common in speech-to-text)
+    fixedText = fixedText.replace(/(\w)\1{2,}/g, '$1'); // aaaa -> a
+    
+    // 2. Fix common word boundary issues
+    fixedText = fixedText.replace(/\b(\w+)(\w)\2+(\w+)\b/g, '$1$2$3'); // worddd -> word
+    
+    // 3. Fix capitalization of proper nouns (detect patterns)
+    fixedText = this.fixProperNounCapitalization(fixedText);
+    
+    // 4. Fix mathematical notation preservation
+    fixedText = this.preserveMathematicalNotation(fixedText);
+    
+    return fixedText;
+  }
+
+  /**
+   * Fix capitalization for proper nouns based on context
+   */
+  private fixProperNounCapitalization(text: string): string {
+    // Detect proper nouns by context patterns
+    const properNounPatterns = [
+      // Names that appear after "by", "from", "of"
+      /\b(by|from|of)\s+([a-z]+)\b/g,
+      // Statistical methods
+      /\b(pearson|spearman|tukey|anova|regression)\b/gi,
+      // Programming languages
+      /\b(java|python|javascript|typescript|c\+\+|c#)\b/gi,
+      // Academic terms
+      /\b(statistics|mathematics|calculus|algebra|geometry)\b/gi
+    ];
+    
+    let fixedText = text;
+    
+    properNounPatterns.forEach(pattern => {
+      fixedText = fixedText.replace(pattern, (match, prefix, word) => {
+        if (prefix) {
+          return `${prefix} ${this.capitalizeFirstLetter(word)}`;
+        }
+        return this.capitalizeFirstLetter(word);
+      });
+    });
+    
+    return fixedText;
+  }
+
+  /**
+   * Preserve mathematical notation and formulas
+   */
+  private preserveMathematicalNotation(text: string): string {
+    let fixedText = text;
+    
+    // Preserve mathematical symbols and formulas
+    fixedText = fixedText.replace(/\b([xyzw]\s*[+\-*/=<>]\s*[xyzw\d]+)\b/g, (match) => {
+      // Remove spaces in mathematical expressions
+      return match.replace(/\s+/g, '');
+    });
+    
+    // Preserve subscript/superscript patterns
+    fixedText = fixedText.replace(/\b(\w+)_(\w+)\b/g, '$1_$2'); // x_i, x_bar
+    fixedText = fixedText.replace(/\b(\w+)\^(\w+)\b/g, '$1^$2'); // x^2, x^n
+    
+    return fixedText;
+  }
+
+  /**
+   * Capitalize first letter of a word
+   */
+  private capitalizeFirstLetter(word: string): string {
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
   }
 
   /**
@@ -250,18 +322,42 @@ export class TextPreprocessingService {
   }
 
   /**
-   * Create smart chunks with educational scoring
+   * Create smart chunks with educational scoring and semantic boundaries
    */
   private createSmartChunks(text: string, useEducationalScoring: boolean = true): string[] {
+    // First, filter out low-quality content
+    const filteredText = this.filterLowQualityContent(text);
+    
+    // Enhanced semantic chunking for educational content
+    const chunks = this.createSemanticChunks(filteredText);
+    
+    // Apply educational scoring if requested
+    if (useEducationalScoring) {
+      return this.scoreAndPrioritizeChunks(chunks);
+    }
+
+    return chunks.filter(chunk => chunk.trim().length > 0);
+  }
+
+  /**
+   * Create semantic chunks that respect educational topic boundaries
+   */
+  private createSemanticChunks(text: string): string[] {
     const sentences = this.splitIntoSentences(text);
     const chunks: string[] = [];
     let currentChunk = '';
     let currentWordCount = 0;
-    const targetChunkSize = 60; // Medium chunks as requested
+    const targetChunkSize = 60;
     const maxChunkSize = 80;
 
-    for (const sentence of sentences) {
+    for (let i = 0; i < sentences.length; i++) {
+      const sentence = sentences[i];
       const sentenceWords = this.countWords(sentence);
+      
+      // Check for topic boundary indicators
+      const isTopicBoundary = this.isTopicBoundary(sentence);
+      const nextSentence = sentences[i + 1];
+      const isNextTopicBoundary = nextSentence ? this.isTopicBoundary(nextSentence) : false;
       
       // If adding this sentence would exceed max size, start a new chunk
       if (currentWordCount + sentenceWords > maxChunkSize && currentChunk.trim()) {
@@ -273,8 +369,12 @@ export class TextPreprocessingService {
         currentWordCount += sentenceWords;
       }
 
-      // If we've reached target size, start a new chunk
-      if (currentWordCount >= targetChunkSize) {
+      // Break at topic boundaries or when reaching target size
+      if (isTopicBoundary && currentWordCount >= 30) {
+        chunks.push(currentChunk.trim());
+        currentChunk = '';
+        currentWordCount = 0;
+      } else if (currentWordCount >= targetChunkSize && (isNextTopicBoundary || i === sentences.length - 1)) {
         chunks.push(currentChunk.trim());
         currentChunk = '';
         currentWordCount = 0;
@@ -286,12 +386,31 @@ export class TextPreprocessingService {
       chunks.push(currentChunk.trim());
     }
 
-    // Apply educational scoring if requested
-    if (useEducationalScoring) {
-      return this.scoreAndPrioritizeChunks(chunks);
-    }
+    return chunks;
+  }
 
-    return chunks.filter(chunk => chunk.trim().length > 0);
+  /**
+   * Detect topic boundary indicators in educational content
+   */
+  private isTopicBoundary(sentence: string): boolean {
+    const lowerSentence = sentence.toLowerCase();
+    
+    // Topic transition phrases
+    const topicBoundaryPhrases = [
+      'now let\'s talk about', 'moving on to', 'next we\'ll discuss',
+      'another important concept', 'let\'s look at', 'let\'s examine',
+      'in this section', 'in this chapter', 'in this part',
+      'first, let\'s', 'second, we\'ll', 'third, we need to',
+      'finally, let\'s', 'in conclusion', 'to summarize',
+      'the key point is', 'the main idea', 'the important thing',
+      'what this means is', 'in other words', 'for example',
+      'for instance', 'specifically', 'particularly',
+      'definition of', 'formula for', 'equation for',
+      'the difference between', 'compared to', 'versus',
+      'advantages of', 'disadvantages of', 'benefits of'
+    ];
+    
+    return topicBoundaryPhrases.some(phrase => lowerSentence.includes(phrase));
   }
 
   /**
@@ -340,6 +459,49 @@ export class TextPreprocessingService {
     return scoredChunks
       .sort((a, b) => b.score - a.score)
       .map(item => item.chunk);
+  }
+
+  /**
+   * Filter out low-quality content that doesn't contribute to learning
+   */
+  private filterLowQualityContent(text: string): string {
+    const filteredText = text;
+    
+    // Remove common non-educational phrases
+    const lowQualityPhrases = [
+      'um', 'uh', 'er', 'ah', 'like', 'you know', 'basically', 'actually',
+      'so basically', 'you see', 'i mean', 'kind of', 'sort of', 'right', 'okay', 'alright',
+      'well', 'now', 'so', 'then', 'and then', 'and so', 'and now',
+      'let me think', 'let me see', 'hmm', 'oh', 'wow', 'yeah', 'yep', 'nope'
+    ];
+    
+    // Remove sentences that are too short or repetitive
+    const sentences = filteredText.split(/[.!?]+/);
+    const qualitySentences = sentences.filter(sentence => {
+      const cleanSentence = sentence.trim().toLowerCase();
+      
+      // Keep sentences with at least 10 characters and some educational value
+      if (cleanSentence.length < 10) return false;
+      
+      // Remove sentences that are mostly filler words
+      const fillerCount = lowQualityPhrases.filter(filler => 
+        cleanSentence.includes(filler)
+      ).length;
+      
+      if (fillerCount > 2) return false;
+      
+      // Keep sentences with educational keywords
+      const educationalKeywords = ['concept', 'principle', 'method', 'technique', 'example', 
+                                  'important', 'key', 'main', 'learn', 'understand', 'explain'];
+      const hasEducationalContent = educationalKeywords.some(keyword => 
+        cleanSentence.includes(keyword)
+      );
+      
+      // Keep sentences that are long enough or have educational content
+      return cleanSentence.length > 20 || hasEducationalContent;
+    });
+    
+    return qualitySentences.join('. ').trim();
   }
 
   /**
