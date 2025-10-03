@@ -31,7 +31,7 @@ export interface SummarizationResult {
   success: boolean;
   summary?: string;
   error?: string;
-  engine?: 'webllm' | 'transformers' | 'mock' | 'enhanced' | 'simple' | 'rag-enhanced' | 'dynamic-enhanced';
+  engine?: 'webllm' | 'transformers' | 'mock' | 'enhanced' | 'simple' | 'rag-enhanced' | 'dynamic-enhanced' | 'dynamic-transcript-based';
   originalWordCount?: number;
   summaryWordCount?: number;
   targetLength?: number;
@@ -39,12 +39,15 @@ export interface SummarizationResult {
   validation?: ValidationResult;
   ragContext?: string[];
   confidence?: number;
+  processingTime?: number;
   // Dynamic subject detection results
   subjects?: Array<{name: string, confidence: number, keywords: string[]}>;
   primarySubject?: string;
 }
 
 class AISummarizationService {
+  private isProcessing = false; // Debouncing flag
+  
   constructor() {
     // Privacy-first: All processing happens locally - no external requests
   }
@@ -117,8 +120,20 @@ class AISummarizationService {
     transcript: string, 
     options: SummarizationOptions = {}
   ): Promise<SummarizationResult> {
-    // Build RAG knowledge base first
-    await localRAGService.buildKnowledgeBase(transcript);
+    // Debouncing: Prevent multiple simultaneous requests
+    if (this.isProcessing) {
+      console.log('⚠️ AI Service: Already processing, ignoring duplicate request');
+      return {
+        success: false,
+        error: 'Already processing another request'
+      };
+    }
+    
+    this.isProcessing = true;
+    
+    try {
+      // Build RAG knowledge base first
+      await localRAGService.buildKnowledgeBase(transcript);
     
     // Retrieve relevant context
     const ragResult = await localRAGService.retrieveRelevantContext(
@@ -204,13 +219,13 @@ class AISummarizationService {
     if (summaryMode === SummaryMode.Simple) {
       result = await this.generateSimpleOverview(processedTranscript, maxLength, minLength);
     } else {
-      result = await this.generateMockSummary(processedTranscript, maxLength, minLength, summaryMode);
+      result = await this.generateDynamicSummary(processedTranscript, maxLength, minLength, summaryMode);
     }
     
     // Ensure we have a working summary
     if (!result.success) {
-      result = await this.generateMockSummary(processedTranscript, maxLength, minLength, summaryMode);
-      result.engine = 'enhanced';
+      result = await this.generateDynamicSummary(processedTranscript, maxLength, minLength, summaryMode);
+      result.engine = 'dynamic-transcript-based';
     }
     
     // Add word count information
@@ -220,6 +235,9 @@ class AISummarizationService {
     result.compressionRatio = compressionRatio;
     
     return result;
+    } finally {
+      this.isProcessing = false; // Reset processing flag
+    }
   }
 
   private async summarizeViaBackground(
@@ -227,21 +245,53 @@ class AISummarizationService {
     options: SummarizationOptions
   ): Promise<SummarizationResult> {
     try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'AI_SUMMARIZE',
-        data: {
-          transcript,
-          options
-        }
+      console.log('🎯 AI Service: Sending message to background script...');
+      
+      // Add timeout mechanism
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('AI summarization timeout')), 30000); // 30 second timeout
       });
       
+      const messagePromise = new Promise<SummarizationResult>((resolve, reject) => {
+        const messageId = Date.now().toString();
+        
+        // Set up response listener
+        const responseListener = (response: any) => {
+          if (response.type === 'AI_SUMMARIZE_RESPONSE' && response.data.messageId === messageId) {
+            chrome.runtime.onMessage.removeListener(responseListener);
+            
+            if (response.data.success && response.data.summary) {
+              resolve(response.data);
+            } else {
+              reject(new Error(response.data.error || 'Background summarization failed'));
+            }
+          }
+        };
+        
+        chrome.runtime.onMessage.addListener(responseListener);
+        
+        // Send the message
+        chrome.runtime.sendMessage({
+          type: 'AI_SUMMARIZE',
+          data: {
+            transcript,
+            options
+          },
+          messageId: messageId
+        }).catch(reject);
+      });
+      
+      const response = await Promise.race([messagePromise, timeoutPromise]);
+      
       if (response.success && response.summary) {
+        console.log('✅ AI Service: Background summarization successful');
         return response;
       } else {
-        // Fallback to local processing if background fails
+        console.log('⚠️ AI Service: Background summarization failed, falling back to local');
         return this.summarizeLocally(transcript, options);
       }
     } catch (error) {
+      console.log('⚠️ AI Service: Background communication failed, falling back to local:', error);
       // Fallback to local processing if communication fails
       return this.summarizeLocally(transcript, options);
     }
@@ -584,161 +634,424 @@ class AISummarizationService {
   }
 
 
-  private async generateMockSummary(
+  private async generateDynamicSummary(
     transcript: string, 
     maxLength: number, 
     minLength: number,
     summaryMode: SummaryMode = SummaryMode.Simple
   ): Promise<SummarizationResult> {
-    // Create an intelligent extractive summary as a fallback
-    const sentences = transcript.split(/[.!?]+/).filter(s => s.trim().length > 10);
-    const wordCount = transcript.split(/\s+/).length;
+    // Create a truly dynamic summary based purely on transcript content
+    console.log('🎯 AI Service: Generating dynamic summary from transcript content...');
     
-    // Enhanced sentence scoring for educational content based on summary type
-    const scoredSentences = sentences.map(sentence => {
-      const words = sentence.toLowerCase().split(/\s+/);
-      let score = 0;
-      
-      // Adjust scoring based on summary mode
-      if (summaryMode === SummaryMode.Simple) {
-        // For simple overviews, prioritize overview and introduction sentences
-        const overviewKeywords = {
-          'topic': 5, 'subject': 5, 'about': 4, 'overview': 4, 'introduction': 4,
-          'learn': 3, 'understand': 3, 'purpose': 3, 'objective': 3, 'goal': 3,
-          'audience': 3, 'level': 2, 'difficulty': 2, 'beginner': 2, 'advanced': 2,
-          'introduces': 5, 'covers': 3, 'explains': 3, 'discusses': 3
-        };
-        
-        Object.entries(overviewKeywords).forEach(([keyword, weight]) => {
-          if (words.includes(keyword)) score += weight;
-        });
-        
-        // Prioritize first few sentences
-        const sentenceIndex = sentences.indexOf(sentence);
-        if (sentenceIndex < 3) score += 4;
-        else if (sentenceIndex < 5) score += 2;
-        
-      } else if (summaryMode === SummaryMode.StudyNotes) {
-        // For study notes, include comprehensive educational content
-        const educationalKeywords = {
-          'concept': 4, 'principle': 4, 'method': 3, 'technique': 3, 'example': 3,
-          'important': 2, 'key': 2, 'main': 2, 'primary': 2, 'essential': 2, 
-          'fundamental': 3, 'basic': 2, 'learn': 2, 'understand': 2, 'explain': 2,
-          'definition': 3, 'demonstration': 2, 'illustration': 2, 'note': 2, 'remember': 2,
-          'step': 3, 'process': 3, 'procedure': 3, 'algorithm': 3, 'formula': 3
-        };
-        
-        Object.entries(educationalKeywords).forEach(([keyword, weight]) => {
-          if (words.includes(keyword)) score += weight;
-        });
-        
-        // Include more sentences for study notes
-        score += Math.min(words.length / 20, 3);
-      }
-      
-      // Technical terms scoring (universal)
-      const technicalTerms = ['algorithm', 'function', 'class', 'variable', 'method', 'program', 'code', 'data', 'structure'];
-      technicalTerms.forEach(term => {
-        if (words.includes(term)) score += 3;
-      });
-      
-      // Process indicators (step-by-step content)
-      const processWords = ['first', 'second', 'next', 'then', 'finally', 'step', 'process', 'procedure'];
-      processWords.forEach(word => {
-        if (words.includes(word)) score += 2;
-      });
-      
-      // Length bonus (adjust based on summary mode)
-      if (summaryMode === SummaryMode.StudyNotes) {
-        score += Math.min(words.length / 20, 3); // More length bonus for study notes
-      } else {
-        score += Math.min(words.length / 15, 2); // Standard length bonus for simple overview
-      }
-      
-      // Numbers and specific terms
-      if (/\d+/.test(sentence)) score += 1;
-      if (/[A-Z]{2,}/.test(sentence)) score += 1; // Acronyms
-      
-      // Question sentences often contain key concepts
-      if (sentence.includes('?')) score += 1;
-      
-      return { sentence: sentence.trim(), score };
-    });
+    // Step 1: Extract key information directly from transcript
+    const extractedContent = this.extractContentFromTranscript(transcript);
     
-    // Sort by score and take the best sentences
-    scoredSentences.sort((a, b) => b.score - a.score);
+    // Step 2: Create summary using only extracted content
+    const summary = this.createTranscriptBasedSummary(extractedContent, maxLength, minLength);
     
-    let summary = '';
-    let currentLength = 0;
-    
-    // FIXED: Try to meet the target length more accurately
-    for (const { sentence } of scoredSentences) {
-      const sentenceWords = sentence.split(/\s+/).length;
-      
-      // If adding this sentence would exceed maxLength, check if we're close enough
-      if (currentLength + sentenceWords > maxLength) {
-        // If we're within 20% of target and have at least minLength, we're good
-        if (currentLength >= minLength && currentLength >= maxLength * 0.8) {
-          break;
-        }
-        // If we're still too short, try to add a partial sentence or continue
-        if (currentLength < minLength) {
-          // Add partial sentence to meet minimum
-          const remainingWords = minLength - currentLength;
-          const words = sentence.split(/\s+/);
-          if (words.length > remainingWords) {
-            summary += words.slice(0, remainingWords).join(' ') + '... ';
-            currentLength += remainingWords;
-          } else {
-            summary += sentence + '. ';
-            currentLength += sentenceWords;
-          }
-        }
-        break;
-      } else {
-        summary += sentence + '. ';
-        currentLength += sentenceWords;
-      }
-    }
-
-    // If we still haven't reached a reasonable length, add more sentences
-    if (currentLength < minLength) {
-      // Add more sentences from the remaining ones
-      const remainingSentences = scoredSentences.slice(summary.split(/[.!?]+/).length - 1);
-      for (const { sentence } of remainingSentences) {
-        const sentenceWords = sentence.split(/\s+/).length;
-        if (currentLength + sentenceWords <= maxLength * 1.2) { // Allow 20% over target
-          summary += sentence + '. ';
-          currentLength += sentenceWords;
-        }
-        if (currentLength >= minLength) break;
-      }
-    }
-
-    // If no summary was created, create a basic one
-    if (!summary.trim()) {
-      const words = transcript.split(/\s+/);
-      const targetWords = Math.min(maxLength, Math.max(minLength, Math.floor(words.length * 0.1)));
-      summary = words.slice(0, targetWords).join(' ') + '...';
-    }
-    
-    // Apply output formatting if specified (options parameter not available in this context)
-    // Formatting will be handled by the calling method
-
-    const finalWordCount = summary.split(/\s+/).length;
-
     return {
       success: true,
-      summary: summary.trim(),
-      engine: 'enhanced'
+      summary: summary,
+      engine: 'dynamic-transcript-based',
+      processingTime: Date.now(),
+      originalWordCount: transcript.split(/\s+/).length,
+      summaryWordCount: summary.split(/\s+/).length,
+      compressionRatio: this.calculateCompressionRatio(transcript, summary)
     };
+  }
+
+  private extractContentFromTranscript(transcript: string): any {
+    // Extract actual content from transcript without hardcoded assumptions
+    const sentences = transcript.split(/[.!?]+/).filter(s => s.trim().length > 10);
+    
+    return {
+      // Extract actual sentences that describe the content
+      introductionSentences: this.extractIntroductionSentences(sentences),
+      mainContentSentences: this.extractMainContentSentences(sentences),
+      conclusionSentences: this.extractConclusionSentences(sentences),
+      
+      // Extract actual topics mentioned in the transcript
+      mentionedTopics: this.extractMentionedTopics(transcript),
+      
+      // Extract actual learning outcomes mentioned
+      mentionedOutcomes: this.extractMentionedOutcomes(transcript),
+      
+      // Extract actual duration/time references
+      timeReferences: this.extractTimeReferences(transcript),
+      
+      // Extract actual key points and concepts
+      keyPoints: this.extractKeyPoints(sentences)
+    };
+  }
+
+  private extractIntroductionSentences(sentences: string[]): string[] {
+    // Get first few sentences that likely introduce the topic
+    return sentences.slice(0, 3).filter(s => s.trim().length > 15);
+  }
+
+  private extractMainContentSentences(sentences: string[]): string[] {
+    // Get middle sentences that contain the main content
+    const middleStart = Math.floor(sentences.length * 0.2);
+    const middleEnd = Math.floor(sentences.length * 0.8);
+    return sentences.slice(middleStart, middleEnd);
+  }
+
+  private extractConclusionSentences(sentences: string[]): string[] {
+    // Get last few sentences that likely conclude the topic
+    return sentences.slice(-3).filter(s => s.trim().length > 15);
+  }
+
+  private extractMentionedTopics(transcript: string): string[] {
+    // Extract topics that are actually mentioned in the transcript
+    const topicPatterns = [
+      /(?:we will|you will|this course|this lesson|this video)\s+(?:talk about|discuss|cover|teach|explain|focus on)\s+([^.!?]+)/gi,
+      /(?:about|regarding|concerning)\s+([^.!?]+)/gi,
+      /(?:the main topic|the subject|the focus)\s+(?:is|will be)\s+([^.!?]+)/gi
+    ];
+    
+    const topics = new Set<string>();
+    topicPatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(transcript)) !== null) {
+        const topic = match[1].trim();
+        if (topic.length > 5 && topic.length < 100) {
+          topics.add(topic.toLowerCase());
+        }
+      }
+    });
+    
+    return Array.from(topics);
+  }
+
+  private extractMentionedOutcomes(transcript: string): string[] {
+    // Extract outcomes that are actually mentioned
+    const outcomePatterns = [
+      /(?:by the end|at the end|when you finish|after this)\s+([^.!?]+)/gi,
+      /(?:you will have|you will be able to|you will learn|you will understand|you will master)\s+([^.!?]+)/gi,
+      /(?:the goal|the objective|the aim|the purpose)\s+(?:is|will be)\s+([^.!?]+)/gi
+    ];
+    
+    const outcomes = new Set<string>();
+    outcomePatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(transcript)) !== null) {
+        const outcome = match[1].trim();
+        if (outcome.length > 10 && outcome.length < 150) {
+          outcomes.add(outcome.toLowerCase());
+        }
+      }
+    });
+    
+    return Array.from(outcomes);
+  }
+
+  private extractTimeReferences(transcript: string): string[] {
+    // Extract actual time references mentioned
+    const timePatterns = [
+      /(\d+)\s*(?:minute|min|hour|hr|second|sec)/gi,
+      /(?:about|approximately|around)\s*(\d+)\s*(?:minute|min|hour|hr)/gi,
+      /(?:just|only)\s*(\d+)\s*(?:minute|min|hour|hr)/gi,
+      /(?:duration|length|time)\s+(?:is|will be)\s+(\d+)\s*(?:minute|min|hour|hr)/gi
+    ];
+    
+    const timeRefs = new Set<string>();
+    timePatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(transcript)) !== null) {
+        timeRefs.add(match[0].trim());
+      }
+    });
+    
+    return Array.from(timeRefs);
+  }
+
+  private extractKeyPoints(sentences: string[]): string[] {
+    // Extract sentences that contain key information
+    const keyPointSentences = sentences.filter(sentence => {
+      const words = sentence.toLowerCase().split(/\s+/);
+      
+      // Look for sentences with important keywords
+      const importantWords = ['important', 'key', 'main', 'primary', 'essential', 'critical', 'fundamental'];
+      const hasImportantWord = importantWords.some(word => words.includes(word));
+      
+      // Look for sentences with learning indicators
+      const learningWords = ['learn', 'understand', 'master', 'develop', 'build', 'create'];
+      const hasLearningWord = learningWords.some(word => words.includes(word));
+      
+      // Look for sentences with explanation indicators
+      const explanationWords = ['explain', 'demonstrate', 'show', 'illustrate', 'describe'];
+      const hasExplanationWord = explanationWords.some(word => words.includes(word));
+      
+      return hasImportantWord || hasLearningWord || hasExplanationWord;
+    });
+    
+    return keyPointSentences.slice(0, 5); // Limit to top 5 key points
+  }
+
+  private extractDuration(transcript: string): string | null {
+    const durationPatterns = [
+      /(\d+)\s*(?:minute|min|hour|hr|second|sec)/gi,
+      /(?:about|approximately|around)\s*(\d+)\s*(?:minute|min|hour|hr)/gi,
+      /(?:just|only)\s*(\d+)\s*(?:minute|min|hour|hr)/gi
+    ];
+    
+    for (const pattern of durationPatterns) {
+      const match = pattern.exec(transcript);
+      if (match) {
+        return match[1] + (match[0].includes('hour') || match[0].includes('hr') ? ' hour' : ' minute');
+      }
+    }
+    return null;
+  }
+
+  private extractTargetAudience(transcript: string): string {
+    if (/beginner|basic|intro|starting|new/i.test(transcript)) return 'beginners';
+    if (/advanced|expert|professional|experienced/i.test(transcript)) return 'advanced';
+    if (/intermediate|some experience/i.test(transcript)) return 'intermediate';
+    return 'general';
+  }
+
+  private extractMainTopics(transcript: string): string[] {
+    const topicPatterns = [
+      /(?:about|discuss|cover|focus on|teach|explain)\s+([^.!?]+)/gi,
+      /(?:this|the)\s+(?:course|lesson|video|tutorial|guide)\s+(?:is about|covers|teaches|explains)\s+([^.!?]+)/gi,
+      /(?:we will|you will|students will)\s+([^.!?]+)/gi,
+      /(?:learn|understand|master)\s+([^.!?]+)/gi
+    ];
+    
+    const topics = new Set<string>();
+    topicPatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(transcript)) !== null) {
+        const topic = match[1].trim();
+        if (topic.length > 5 && topic.length < 100) {
+          topics.add(topic.toLowerCase());
+        }
+      }
+    });
+    
+    return Array.from(topics).slice(0, 5);
+  }
+
+  private extractLearningObjectives(transcript: string): string[] {
+    const objectivePatterns = [
+      /(?:learn|understand|master|develop|build|create|design|implement)\s+([^.!?]+)/gi,
+      /(?:you will|students will|we will)\s+(?:be able to\s+)?([^.!?]+)/gi,
+      /(?:goal|objective|aim|purpose)\s+(?:is\s+)?([^.!?]+)/gi
+    ];
+    
+    const objectives = new Set<string>();
+    objectivePatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(transcript)) !== null) {
+        const objective = match[1].trim();
+        if (objective.length > 10 && objective.length < 150) {
+          objectives.add(objective.toLowerCase());
+        }
+      }
+    });
+    
+    return Array.from(objectives).slice(0, 4);
+  }
+
+  private extractKeyConcepts(transcript: string): string[] {
+    const conceptKeywords = {
+      'concept': 4, 'principle': 4, 'method': 3, 'technique': 3, 'strategy': 3,
+      'approach': 2, 'process': 2, 'system': 2, 'framework': 3, 'model': 3,
+      'theory': 3, 'formula': 3, 'algorithm': 3, 'function': 3, 'structure': 2
+    };
+    
+    const concepts: string[] = [];
+    Object.keys(conceptKeywords).forEach(keyword => {
+      if (transcript.includes(keyword)) {
+        concepts.push(keyword);
+      }
+    });
+    
+    return concepts;
+  }
+
+  private extractTechnicalTerms(transcript: string): string[] {
+    const technicalTerms = ['algorithm', 'function', 'class', 'variable', 'method', 'program', 'code', 'data', 'structure', 'database', 'api', 'framework', 'library'];
+    return technicalTerms.filter(term => transcript.includes(term));
+  }
+
+  private extractOutcomes(transcript: string): string[] {
+    const outcomePatterns = [
+      /(?:result|outcome|benefit|advantage)\s+(?:is|will be)\s+([^.!?]+)/gi,
+      /(?:by the end|at the end|finally|ultimately)\s+([^.!?]+)/gi,
+      /(?:you will have|students will have)\s+([^.!?]+)/gi
+    ];
+    
+    const outcomes = new Set<string>();
+    outcomePatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(transcript)) !== null) {
+        const outcome = match[1].trim();
+        if (outcome.length > 10 && outcome.length < 100) {
+          outcomes.add(outcome.toLowerCase());
+        }
+      }
+    });
+    
+    return Array.from(outcomes).slice(0, 3);
+  }
+
+  private extractBenefits(transcript: string): string[] {
+    const benefitPatterns = [
+      /(?:benefit|advantage|value)\s+(?:of|is)\s+([^.!?]+)/gi,
+      /(?:help|enable|allow)\s+([^.!?]+)/gi,
+      /(?:improve|enhance|increase)\s+([^.!?]+)/gi
+    ];
+    
+    const benefits = new Set<string>();
+    benefitPatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(transcript)) !== null) {
+        const benefit = match[1].trim();
+        if (benefit.length > 10 && benefit.length < 100) {
+          benefits.add(benefit.toLowerCase());
+        }
+      }
+    });
+    
+    return Array.from(benefits).slice(0, 3);
+  }
+
+  private createTranscriptBasedSummary(extractedContent: any, maxLength: number, minLength: number): string {
+    let summary = '';
+    
+    // Start with introduction content if available
+    if (extractedContent.introductionSentences.length > 0) {
+      const introSentence = this.paraphraseSentence(extractedContent.introductionSentences[0]);
+      summary += introSentence + ' ';
+    }
+    
+    // Add main topics if mentioned
+    if (extractedContent.mentionedTopics.length > 0) {
+      const mainTopic = extractedContent.mentionedTopics[0];
+      summary += `The content focuses on ${mainTopic}`;
+      
+      if (extractedContent.mentionedTopics.length > 1) {
+        summary += `, covering topics like ${extractedContent.mentionedTopics.slice(1, 3).join(' and ')}`;
+      }
+      summary += '. ';
+    }
+    
+    // Add key points from the content
+    if (extractedContent.keyPoints.length > 0) {
+      summary += 'Key points discussed include ';
+      const keyPointTexts = extractedContent.keyPoints.slice(0, 3).map(point => 
+        this.paraphraseSentence(point)
+      );
+      summary += keyPointTexts.join(', ') + '. ';
+    }
+    
+    // Add time references if mentioned
+    if (extractedContent.timeReferences.length > 0) {
+      const timeRef = extractedContent.timeReferences[0];
+      summary += `The content duration is ${timeRef}. `;
+    }
+    
+    // Add outcomes if mentioned
+    if (extractedContent.mentionedOutcomes.length > 0) {
+      const outcome = this.paraphraseSentence(extractedContent.mentionedOutcomes[0]);
+      summary += `By the end, ${outcome}.`;
+    } else if (extractedContent.conclusionSentences.length > 0) {
+      const conclusion = this.paraphraseSentence(extractedContent.conclusionSentences[0]);
+      summary += `In conclusion, ${conclusion.toLowerCase()}.`;
+    }
+    
+    // Clean up and ensure proper length
+    summary = this.cleanupSummaryText(summary);
+    
+    // Adjust length if needed
+    const currentWords = summary.split(/\s+/).length;
+    if (currentWords > maxLength) {
+      summary = this.compressSummary(summary, maxLength);
+    } else if (currentWords < minLength) {
+      summary = this.expandSummaryWithContent(summary, extractedContent, minLength);
+    }
+    
+    return summary;
+  }
+
+  private paraphraseSentence(sentence: string): string {
+    // Simple paraphrasing by cleaning up the sentence
+    let paraphrased = sentence.trim();
+    
+    // Remove common filler words and clean up
+    paraphrased = paraphrased
+      .replace(/^(well|so|now|okay|alright|right|um|uh)\s+/i, '')
+      .replace(/\s+/g, ' ')
+      .replace(/^[a-z]/, (match) => match.toUpperCase())
+      .replace(/[.!?]$/, '');
+    
+    // Ensure proper ending
+    if (!/[.!?]$/.test(paraphrased)) {
+      paraphrased += '.';
+    }
+    
+    return paraphrased;
+  }
+
+  private cleanupSummaryText(text: string): string {
+    return text
+      .replace(/\s+/g, ' ') // Remove extra spaces
+      .replace(/,\s*,/g, ',') // Remove double commas
+      .replace(/\.\s*\./g, '.') // Remove double periods
+      .replace(/\s+([.!?])/g, '$1') // Remove spaces before punctuation
+      .trim();
+  }
+
+  private compressSummary(summary: string, targetWords: number): string {
+    const sentences = summary.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const wordsPerSentence = targetWords / sentences.length;
+    
+    // Keep the most important sentences and compress others
+    return sentences
+      .slice(0, Math.max(3, Math.floor(targetWords / 15))) // Keep 3-5 sentences
+      .join('. ')
+      .trim() + '.';
+  }
+
+  private expandSummary(summary: string, analysis: any, targetWords: number): string {
+    // Add more details if summary is too short
+    if (analysis.keyConcepts.length > 0) {
+      summary += ` Key concepts covered include ${analysis.keyConcepts.slice(0, 3).join(', ')}.`;
+    }
+    
+    if (analysis.benefits.length > 0) {
+      summary += ` This course helps ${analysis.benefits[0]}.`;
+    }
+    
+    return summary;
+  }
+
+  private calculateCompressionRatio(original: string, summary: string): number {
+    const originalWords = this.calculateWordCount(original);
+    const summaryWords = this.calculateWordCount(summary);
+    return originalWords > 0 ? originalWords / summaryWords : 1;
+  }
+
+  private expandSummaryWithContent(summary: string, extractedContent: any, targetWords: number): string {
+    // Add more details if summary is too short
+    if (extractedContent.keyPoints.length > 0) {
+      summary += ` Key points discussed include ${extractedContent.keyPoints.slice(0, 2).join(', ')}.`;
+    }
+    
+    if (extractedContent.mentionedTopics.length > 0) {
+      summary += ` This content covers ${extractedContent.mentionedTopics.slice(0, 2).join(' and ')}.`;
+    }
+    
+    return summary;
   }
 
   // Method to check which engines are available
   getAvailableEngines(): { webllm: boolean; transformers: boolean; mock: boolean } {
     return {
-      webllm: false, // AI engines removed for privacy-first approach
-      transformers: false, // AI engines removed for privacy-first approach
+      webllm: true, // WebLLM available via offscreen document
+      transformers: false, // Transformers not available
       mock: true // Always available as fallback
     };
   }
@@ -746,8 +1059,8 @@ class AISummarizationService {
   // Method to get engine status
   getEngineStatus(): { webllm: string; transformers: string; mock: string } {
     return {
-      webllm: 'Not Available (Removed for privacy-first approach)',
-      transformers: 'Not Available (Removed for privacy-first approach)',
+      webllm: 'Available (WebLLM via offscreen document)',
+      transformers: 'Not Available',
       mock: 'Available (Enhanced local extractive summary)'
     };
   }
@@ -956,19 +1269,28 @@ This should be like comprehensive lecture notes that can be used for deep study,
     return `
 AI Summarization Status:
 
-🔒 Privacy-First Approach:
-   - All processing happens locally in your browser
-   - No external requests or data transmission
-   - No AI model downloads or CDN usage
-   - Enhanced extractive summarization with educational focus
+🤖 WebLLM Integration:
+   - Advanced AI summarization using WebLLM
+   - Local processing in offscreen document
+   - No external data transmission
+   - Llama-3-2-3B model for high-quality summaries
+
+⚠️ IMPORTANT: WebGPU Setup Required
+   - For optimal performance, enable WebGPU in Chrome:
+   1. Go to chrome://flags/#enable-unsafe-webgpu
+   2. Set "Unsafe WebGPU" to "Enabled"
+   3. Restart Chrome
+   - Without WebGPU: Slower WebAssembly fallback (still works!)
 
 ✅ Current Features:
+   - WebLLM-powered AI summarization
    - Smart sentence scoring for educational content
    - Intelligent content filtering and prioritization
    - Multiple summary modes (Simple overview, Study notes)
-   - Privacy-protected local processing
+   - Streaming responses for real-time updates
+   - Automatic WebGPU detection and fallback
 
-📚 This extension prioritizes your privacy while providing high-quality transcript summarization.
+📚 This extension provides high-quality AI-powered transcript summarization while maintaining privacy through local processing.
     `.trim();
   }
 

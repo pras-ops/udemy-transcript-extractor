@@ -21,11 +21,8 @@ async function buildExtension() {
   fs.copyFileSync(manifestPath, distManifestPath);
   console.log('✓ Copied manifest.json');
 
-  // Copy background script
-  const backgroundPath = path.join(__dirname, '../public/background.js');
-  const distBackgroundPath = path.join(distDir, 'background.js');
-  fs.copyFileSync(backgroundPath, distBackgroundPath);
-  console.log('✓ Copied background.js');
+  // Background script will be built by vite from src/background.ts
+  console.log('✓ background.js will be built by vite from src/background.ts');
 
   // Copy service worker for WebLLM
   const swPath = path.join(__dirname, '../public/sw.ts');
@@ -35,20 +32,15 @@ async function buildExtension() {
     console.log('✓ Copied service worker (sw.js)');
   }
 
-  // Copy offscreen document and script
+  // Copy offscreen document HTML (JavaScript will be built by vite)
   const offscreenHtmlPath = path.join(__dirname, '../public/offscreen.html');
   const distOffscreenHtmlPath = path.join(distDir, 'offscreen.html');
   if (fs.existsSync(offscreenHtmlPath)) {
     fs.copyFileSync(offscreenHtmlPath, distOffscreenHtmlPath);
     console.log('✓ Copied offscreen.html');
   }
-
-  const offscreenJsPath = path.join(__dirname, '../public/offscreen.js');
-  const distOffscreenJsPath = path.join(distDir, 'offscreen.js');
-  if (fs.existsSync(offscreenJsPath)) {
-    fs.copyFileSync(offscreenJsPath, distOffscreenJsPath);
-    console.log('✓ Copied offscreen.js');
-  }
+  
+  console.log('✓ offscreen.js will be built by vite from src/offscreen.ts');
 
   // Copy icons (if they exist)
   const iconsDir = path.join(__dirname, '../public/icons');
@@ -64,6 +56,72 @@ async function buildExtension() {
       );
     });
     console.log('✓ Copied icons');
+  }
+
+  // Copy AI models (if they exist)
+  const modelsDir = path.join(__dirname, '../public/models');
+  const distModelsDir = path.join(distDir, 'models');
+  if (fs.existsSync(modelsDir)) {
+    if (!fs.existsSync(distModelsDir)) {
+      fs.mkdirSync(distModelsDir, { recursive: true });
+    }
+    
+    // Copy all model directories
+    fs.readdirSync(modelsDir).forEach(modelName => {
+      const modelPath = path.join(modelsDir, modelName);
+      const distModelPath = path.join(distModelsDir, modelName);
+      
+      if (fs.statSync(modelPath).isDirectory()) {
+        if (!fs.existsSync(distModelPath)) {
+          fs.mkdirSync(distModelPath, { recursive: true });
+        }
+        
+        // Copy all files and subdirectories in the model directory recursively
+        function copyRecursive(src, dest) {
+          if (!fs.existsSync(dest)) {
+            fs.mkdirSync(dest, { recursive: true });
+          }
+          
+          fs.readdirSync(src).forEach(item => {
+            const srcPath = path.join(src, item);
+            const destPath = path.join(dest, item);
+            
+            if (fs.statSync(srcPath).isDirectory()) {
+              copyRecursive(srcPath, destPath);
+            } else {
+              fs.copyFileSync(srcPath, destPath);
+            }
+          });
+        }
+        
+        copyRecursive(modelPath, distModelPath);
+        
+        console.log(`✓ Copied model: ${modelName}`);
+      }
+    });
+  } else {
+    console.log('⚠️ No models found - run "npm run download-models" first');
+  }
+
+  // Copy WASM files for Transformers.js
+  const wasmDir = path.join(__dirname, '../public/wasm');
+  const distWasmDir = path.join(distDir, 'wasm');
+  if (fs.existsSync(wasmDir)) {
+    if (!fs.existsSync(distWasmDir)) {
+      fs.mkdirSync(distWasmDir, { recursive: true });
+    }
+    
+    // Copy all WASM files
+    fs.readdirSync(wasmDir).forEach(file => {
+      fs.copyFileSync(
+        path.join(wasmDir, file),
+        path.join(distWasmDir, file)
+      );
+    });
+    
+    console.log('✓ Copied WASM files for Transformers.js');
+  } else {
+    console.log('⚠️ No WASM files found - Transformers.js may not work');
   }
 
   console.log('✓ Extension build complete!');

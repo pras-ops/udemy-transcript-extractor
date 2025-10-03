@@ -40,6 +40,9 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
   const [summary, setSummary] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [engine, setEngine] = useState<'webllm' | 'transformers' | 'mock' | 'enhanced' | 'simple' | 'rag-enhanced' | 'enhanced-local' | 'dynamic-enhanced' | 'error' | null>(null);
+  const [streamingText, setStreamingText] = useState('');
+  const [streamingProgress, setStreamingProgress] = useState(0);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [subjects, setSubjects] = useState<Array<{name: string, confidence: number, keywords: string[]}>>([]);
   const [primarySubject, setPrimarySubject] = useState<string>('');
   const [options, setOptions] = useState<SummarizationOptions>({
@@ -149,6 +152,53 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
     }
   }, [transcript]);
 
+  // Listen for WebLLM streaming messages
+  useEffect(() => {
+    const handleMessage = (message: any) => {
+      console.log('🎯 AISummarizationPopup: Received message:', message.type);
+      
+      if (message.type === 'AI_SUMMARIZE_CHUNK') {
+        // Handle streaming chunks
+        setStreamingText(prev => prev + (message.data.chunk || ''));
+        setSummary(message.data.fullResponse || '');
+        setIsStreaming(true);
+      } else if (message.type === 'AI_SUMMARIZE_RESPONSE') {
+        // Handle final response
+        if (message.data.success) {
+          setSummary(message.data.summary || '');
+          setEngine(message.data.engine || 'webllm');
+        } else {
+          const errorMessage = message.data.error || 'Failed to generate summary';
+          setError(errorMessage);
+          
+          // Check if it's a system compatibility error
+          if (errorMessage.includes('System not compatible') || errorMessage.includes('hardware may not support')) {
+            setEngine('error');
+          }
+        }
+        setIsSummarizing(false);
+        setIsStreaming(false);
+        setStreamingText('');
+        setStreamingProgress(0);
+      } else if (message.type === 'WEBLLM_LOAD_PROGRESS') {
+        // Handle model loading progress
+        setStreamingProgress(message.data.progress || 0);
+        console.log(`🎯 AISummarizationPopup: WebLLM loading ${message.data.progress}% - ${message.data.text}`);
+      } else if (message.type === 'TRANSFORMERS_LOAD_PROGRESS') {
+        // Handle Transformers.js loading progress
+        setStreamingProgress(message.data.progress || 0);
+        console.log(`🎯 AISummarizationPopup: Transformers.js loading ${message.data.progress}%`);
+      } else if (message.type === 'WEBLLM_CHUNK_PROGRESS') {
+        // Handle hierarchical processing progress
+        console.log(`🎯 AISummarizationPopup: Processing chunk ${message.data.current}/${message.data.total}`);
+        setStreamingProgress(Math.round((message.data.current / message.data.total) * 100));
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handleMessage);
+    return () => chrome.runtime.onMessage.removeListener(handleMessage);
+  }, []);
+
   const handleSummarize = async () => {
     console.log('🎯 AISummarizationPopup: handleSummarize called');
     console.log('🎯 AISummarizationPopup: transcript length:', transcript?.length);
@@ -162,50 +212,45 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
       return;
     }
 
-    console.log('🎯 AISummarizationPopup: Starting summarization...');
+    console.log('🎯 AISummarizationPopup: Starting WebLLM summarization...');
     setIsSummarizing(true);
     setError('');
     setSummary('');
+    setStreamingText('');
+    setStreamingProgress(0);
 
     try {
-      console.log('🎯 AISummarizationPopup: Calling aiSummarizationService.generateFullyDynamicSummary...');
+      console.log('🎯 AISummarizationPopup: Calling ExtensionService.summarizeWithAI...');
       console.log('🎯 AISummarizationPopup: Final options being passed:', options);
       
-      // Get video title from the page or use default
-      const videoTitle = document.title || 'Video Transcript';
+      // Import ExtensionService dynamically to avoid circular dependencies
+      const { ExtensionService } = await import('../../lib/extension-service');
       
-      const result: SummarizationResult = await aiSummarizationService.generateFullyDynamicSummary(
-        transcript,
-        videoTitle,
-        options
-      );
-      console.log('🎯 AISummarizationPopup: Received result:', result);
+      const result = await ExtensionService.summarizeWithAI(transcript, {
+        mode: options.summaryMode === SummaryMode.Simple ? 'balanced' : 'detailed',
+        outputFormat: options.outputFormat,
+        useWebLLM: true,
+        includeTimestamps: false
+      });
+      
+      console.log('🎯 AISummarizationPopup: Received WebLLM result:', result);
 
-      if (result.success && result.summary) {
+      if (result.success && result.data?.summary) {
         console.log('🎯 AISummarizationPopup: Summary generated successfully');
-        console.log('🎯 AISummarizationPopup: Engine received:', result.engine);
-        setSummary(result.summary);
-        setEngine(result.engine || null);
-        
-        // Update dynamic subject information
-        if (result.subjects) {
-          setSubjects(result.subjects);
-        }
-        if (result.primarySubject) {
-          setPrimarySubject(result.primarySubject);
-        }
+        console.log('🎯 AISummarizationPopup: Engine received:', result.data.engine);
+        setSummary(result.data.summary);
+        setEngine(result.data.engine || 'webllm');
         
         // Update word count information
-        if (result.originalWordCount !== undefined && result.summaryWordCount !== undefined) {
+        if (result.data.wordCount) {
           setWordCountInfo({
-            original: result.originalWordCount,
-            summary: result.summaryWordCount,
-            target: result.targetLength,
-            compressionRatio: result.compressionRatio
+            original: transcript.split(/\s+/).length,
+            summary: result.data.summary.split(/\s+/).length,
+            compressionRatio: result.data.summary.split(/\s+/).length / transcript.split(/\s+/).length
           });
         }
         
-        onSummaryGenerated?.(result.summary);
+        onSummaryGenerated?.(result.data.summary);
       } else {
         console.log('🎯 AISummarizationPopup: Summarization failed:', result.error);
         setError(result.error || 'Failed to generate summary');
@@ -575,13 +620,46 @@ export const AISummarizationPopup: React.FC<AISummarizationPopupProps> = ({
                     <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200">
-                        Generating Summary...
+                        {streamingProgress > 0 ? `Loading WebLLM Model... ${streamingProgress}%` : 'Generating Summary...'}
                       </h4>
                       <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                        Processing transcript with AI models
+                        {streamingProgress > 0 ? 'Initializing AI model for processing' : 'Processing transcript with WebLLM'}
                       </p>
+                      {streamingProgress > 0 && (
+                        <div className="mt-2 w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
+                          <div 
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                            style={{ width: `${streamingProgress}%` }}
+                          ></div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Streaming State */}
+              {isStreaming && streamingText && (
+                <div className="p-6 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                      <Zap className="w-4 h-4 text-green-600 dark:text-green-400 animate-pulse" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">
+                        Streaming Summary
+                      </h4>
+                      <p className="text-sm text-green-700 dark:text-green-300 mt-1">
+                        WebLLM generating real-time summary
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                      {streamingText}
+                      <span className="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-1"></span>
                     </div>
                   </div>
                 </div>

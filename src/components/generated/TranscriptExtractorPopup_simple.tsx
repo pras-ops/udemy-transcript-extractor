@@ -3,7 +3,14 @@
 import * as React from "react";
 import { useState, useEffect } from 'react';
 import { FileText, Sun, Moon, Download, Clock, Clipboard, Play, Lock, Github, Zap, Loader2 } from 'lucide-react';
-import { ExtensionService } from '../../lib/extension-service';
+// Dynamic import to avoid chunking conflicts
+// import { ExtensionService } from '../../lib/extension-service';
+
+// Helper function for dynamic ExtensionService import
+const getExtensionService = async () => {
+  const { ExtensionService } = await import('../../lib/extension-service');
+  return ExtensionService;
+};
 import { StorageService } from '../../lib/storage-service';
 
 export default function TranscriptExtractorPopup() {
@@ -61,7 +68,7 @@ export default function TranscriptExtractorPopup() {
   // Check page availability
   const checkPageAvailability = async () => {
     try {
-      const response = await ExtensionService.checkPageAvailability();
+      const response = await (await getExtensionService()).checkPageAvailability();
       if (response.success && response.data) {
         setCurrentVideo(response.data);
       }
@@ -77,7 +84,7 @@ export default function TranscriptExtractorPopup() {
     setExtractionStatus('extracting');
 
     try {
-      const response = await ExtensionService.collectCurrentTranscript();
+      const response = await (await getExtensionService()).collectCurrentTranscript();
       
       if (response.success && response.data) {
         const transcriptData = response.data;

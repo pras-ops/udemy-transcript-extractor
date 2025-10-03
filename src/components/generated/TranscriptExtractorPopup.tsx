@@ -3,8 +3,15 @@
 import * as React from "react";
 import { useState, useEffect, useMemo } from 'react';
 import { FileText, Sun, Moon, Download, ChevronDown, Clock, Clipboard, Play, Lock, Github, Zap, AlertCircle, CheckCircle, Sparkles } from 'lucide-react';
-import { ExtensionService } from '../../lib/extension-service';
+// Dynamic import to avoid chunking conflicts
+// import { ExtensionService } from '../../lib/extension-service';
 import { StorageService } from '../../lib/storage-service';
+
+// Helper function for dynamic ExtensionService import
+const getExtensionService = async () => {
+  const { ExtensionService } = await import('../../lib/extension-service');
+  return ExtensionService;
+};
 import { AISummarizationPopup } from './AISummarizationPopup';
 import { SummaryMode } from '../../lib/ai-summarization-service';
 import { SystemPerformanceDetector } from '../../lib/system-performance-detector';
@@ -62,6 +69,12 @@ export const TranscriptExtractorPopup = () => {
   const [batchStats, setBatchStats] = useState({ total: 0, completed: 0, failed: 0, skipped: 0 });
   const [isNavigating, setIsNavigating] = useState(false);
   const [currentProcessingLecture, setCurrentProcessingLecture] = useState<string>('');
+  
+  // Debug batchMode changes
+  useEffect(() => {
+    console.log('🔄 batchMode changed to:', batchMode);
+    console.log('🔄 Current batchMode state:', batchMode);
+  }, [batchMode]);
   const [currentSection, setCurrentSection] = useState<string>('');
   const [progressUpdateTrigger, setProgressUpdateTrigger] = useState(0);
   const [clipboardEntries, setClipboardEntries] = useState(0);
@@ -70,6 +83,10 @@ export const TranscriptExtractorPopup = () => {
   // AI Summarization states
   const [showAIPopup, setShowAIPopup] = useState(false);
   const [aiSummary, setAiSummary] = useState<string>('');
+  const [streamingText, setStreamingText] = useState('');
+  const [streamingProgress, setStreamingProgress] = useState(0);
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const [aiError, setAiError] = useState('');
   
   // AI Settings - using defaults only
   const [aiSettings] = useState({
@@ -207,6 +224,18 @@ export const TranscriptExtractorPopup = () => {
     StorageService.saveState({ currentProcessingLecture });
   }, [currentProcessingLecture]);
 
+  // Auto-save batch collection state
+  useEffect(() => {
+    StorageService.saveState({
+      batchMode,
+      batchProgress,
+      batchStats,
+      isBatchCollecting,
+      clipboardData,
+      clipboardEntries
+    });
+  }, [batchMode, batchProgress, batchStats, isBatchCollecting, clipboardData, clipboardEntries]);
+
   // Simple video title update and section detection
   useEffect(() => {
     if (currentVideo && currentVideo.title) {
@@ -249,17 +278,36 @@ export const TranscriptExtractorPopup = () => {
     try {
       const savedState = await StorageService.loadState();
       
-      // Restore batch collection state - but only if user was actively collecting
-      // For new sessions, always start with batch collection inactive
-      const wasActivelyCollecting = savedState.isBatchCollecting && savedState.batchStats.total > 0;
+      // Restore batch collection state - be more permissive about restoration
+      // Restore if user was actively collecting OR if they have any batch progress
+      const wasActivelyCollecting = savedState.isBatchCollecting || 
+                                   (savedState.batchStats && savedState.batchStats.total > 0) ||
+                                   (savedState.batchProgress && Object.keys(savedState.batchProgress).length > 0);
+      
+      console.log('🎯 Restoring batch state:', {
+        wasActivelyCollecting,
+        savedBatchMode: savedState.batchMode,
+        savedBatchStats: savedState.batchStats,
+        savedBatchProgress: savedState.batchProgress
+      });
       
       if (wasActivelyCollecting) {
         // User was in middle of batch collection - restore their state
-        setBatchMode(savedState.batchMode);
-        setBatchProgress(savedState.batchProgress);
-        setBatchStats(savedState.batchStats);
+        setBatchMode(savedState.batchMode || 'next');
+        setBatchProgress(savedState.batchProgress || {});
+        setBatchStats(savedState.batchStats || { total: 0, completed: 0, failed: 0, skipped: 0 });
         setIsBatchCollecting(true);
         setCurrentProcessingLecture(savedState.currentProcessingLecture || '');
+        
+        // Also restore clipboard data if available
+        if (savedState.clipboardData) {
+          setClipboardData(savedState.clipboardData);
+          setClipboardEntries(savedState.clipboardEntries || 0);
+        }
+        
+        console.log('✅ Batch state restored successfully');
+        console.log('🎯 Restored batchMode:', savedState.batchMode);
+        console.log('🎯 Restored isBatchCollecting:', true);
       } else {
         // New session or user wasn't collecting - start fresh
         setBatchMode('next');
@@ -267,6 +315,12 @@ export const TranscriptExtractorPopup = () => {
         setBatchStats({ total: 0, completed: 0, failed: 0, skipped: 0 });
         setIsBatchCollecting(false);
         setCurrentProcessingLecture('');
+        setClipboardData('');
+        setClipboardEntries(0);
+        
+        console.log('🔄 Starting fresh batch state');
+        console.log('🎯 Initial batchMode:', 'next');
+        console.log('🎯 Initial isBatchCollecting:', false);
       }
       
       // Restore other UI state
@@ -306,7 +360,8 @@ export const TranscriptExtractorPopup = () => {
       setExtractionStatus('extracting');
       setErrorMessage('');
       
-      const response = await ExtensionService.checkAvailability();
+      const ExtensionService = await getExtensionService();
+      const response = await (await getExtensionService()).checkAvailability();
       
       if (response.success && response.data) {
         setAvailability(response.data);
@@ -314,14 +369,14 @@ export const TranscriptExtractorPopup = () => {
         
         if (response.data.isCoursePage) {
           // Get current video info
-          const videoInfo = await ExtensionService.getVideoInfo();
+          const videoInfo = await (await getExtensionService()).getVideoInfo();
           if (videoInfo.success && videoInfo.data) {
             setCurrentVideo(videoInfo.data);
           }
           
           // Get course structure
           setIsCourseStructureLoading(true);
-          const courseResponse = await ExtensionService.extractCourseStructure();
+          const courseResponse = await (await getExtensionService()).extractCourseStructure();
                 if (courseResponse.success && courseResponse.data) {
               setCourseStructure(courseResponse.data);
           } else {
@@ -363,7 +418,7 @@ export const TranscriptExtractorPopup = () => {
     setErrorMessage('');
 
     try {
-      const response = await ExtensionService.extractTranscript();
+      const response = await (await getExtensionService()).extractTranscript();
       
       if (response.success && response.data) {
         setExtractedTranscript(response.data);
@@ -371,7 +426,7 @@ export const TranscriptExtractorPopup = () => {
         
         // Automatically copy transcript to clipboard
         try {
-          const copied = await ExtensionService.copyToClipboard(response.data);
+          const copied = await (await getExtensionService()).copyToClipboard(response.data);
           if (!copied) {
             setErrorMessage('Transcript extracted but failed to copy to clipboard');
           }
@@ -391,12 +446,43 @@ export const TranscriptExtractorPopup = () => {
   };
 
   // AI Summarization handlers
-  const handleAISummarize = () => {
+  const handleAISummarize = async () => {
     if (!extractedTranscript || extractedTranscript.trim().length === 0) {
       setErrorMessage('Please extract a transcript first before generating an AI summary');
       return;
     }
+    
     setShowAIPopup(true);
+    setIsAiProcessing(true);
+    setAiError('');
+    setStreamingText('');
+    setStreamingProgress(0);
+    
+    try {
+      console.log('🎯 Popup: Starting WebLLM summarization...');
+      
+      const response = await (await getExtensionService()).summarizeWithAI(extractedTranscript, {
+        mode: aiSettings.summaryMode === SummaryMode.Simple ? 'balanced' : 'detailed',
+        outputFormat: aiSettings.outputFormat,
+        useWebLLM: aiSettings.useWebLLM,
+        includeTimestamps: includeTimestamps
+      });
+      
+      console.log('🎯 Popup: AI summarization response:', response);
+      
+      if (response.success) {
+        setAiSummary(response.summary || '');
+        setIsAiProcessing(false);
+      } else {
+        setAiError(response.error || 'Failed to generate summary');
+        setIsAiProcessing(false);
+      }
+      
+    } catch (error) {
+      console.error('❌ Popup: AI summarization error:', error);
+      setAiError(error instanceof Error ? error.message : 'Failed to generate summary');
+      setIsAiProcessing(false);
+    }
   };
 
   const handleAISummaryGenerated = (summary: string) => {
@@ -425,7 +511,7 @@ export const TranscriptExtractorPopup = () => {
     console.log('🎯 Original transcript length:', extractedTranscript.length);
     console.log('🎯 Sample transcript content:', extractedTranscript.substring(0, 200) + '...');
 
-    const formattedTranscript = ExtensionService.formatTranscript(
+    const formattedTranscript = (await getExtensionService()).formatTranscript(
       extractedTranscript,
       exportFormat,
       includeTimestamps,
@@ -439,7 +525,7 @@ export const TranscriptExtractorPopup = () => {
       switch (action) {
         case 'clipboard': {
           console.log('🎯 Attempting to copy to clipboard...');
-          const copied = await ExtensionService.copyToClipboard(formattedTranscript);
+          const copied = await (await getExtensionService()).copyToClipboard(formattedTranscript);
           if (!copied) {
             console.error('❌ Failed to copy to clipboard');
             setErrorMessage('Failed to copy to clipboard');
@@ -452,14 +538,14 @@ export const TranscriptExtractorPopup = () => {
 
         case 'download': {
           console.log('🎯 Attempting to download...');
-          const filename = ExtensionService.generateFilename(
+          const filename = (await getExtensionService()).generateFilename(
             currentVideo?.title || 'transcript',
             exportFormat
           );
-          const mimeType = ExtensionService.getMimeType(exportFormat);
+          const mimeType = (await getExtensionService()).getMimeType(exportFormat);
           console.log('🎯 Download filename:', filename);
           console.log('🎯 MIME type:', mimeType);
-          ExtensionService.downloadFile(formattedTranscript, filename, mimeType);
+          (await getExtensionService()).downloadFile(formattedTranscript, filename, mimeType);
           setErrorMessage(''); // Clear any previous errors
           console.log('✅ Transcript downloaded successfully');
           break;
@@ -474,33 +560,45 @@ export const TranscriptExtractorPopup = () => {
   // New function to append transcript to clipboard with storage management
   const appendToClipboard = async (transcript: string, lectureTitle: string) => {
     try {
+      console.log('🎯 appendToClipboard called with:', { transcriptLength: transcript.length, lectureTitle });
+      
       // Check if we're approaching the 5MB limit (roughly 5 million characters)
       const maxSize = 4.5 * 1024 * 1024; // 4.5MB to be safe
       
       if (clipboardData.length + transcript.length > maxSize) {
+        console.log('⚠️ Clipboard storage limit reached');
         setErrorMessage('Clipboard storage limit reached! Please export current data first.');
         return false;
       }
-
+      
       // Format the transcript with title and separator
       const formattedTranscript = `\n\n=== ${lectureTitle} ===\n${transcript}\n`;
+      console.log('🎯 Formatted transcript length:', formattedTranscript.length);
       
       // Append to clipboard data
       const newClipboardData = clipboardData + formattedTranscript;
+      console.log('🎯 New clipboard data length:', newClipboardData.length);
       setClipboardData(newClipboardData);
       
       // Update clipboard entries count
       const newEntries = clipboardEntries + 1;
+      console.log('🎯 New clipboard entries count:', newEntries);
       setClipboardEntries(newEntries);
       
       // Save to Chrome storage
+      console.log('🎯 Saving to Chrome storage...');
       await StorageService.saveClipboardData(newClipboardData, newEntries);
+      console.log('✅ Chrome storage saved');
       
       // Copy to system clipboard
+      console.log('🎯 Copying to system clipboard...');
       await navigator.clipboard.writeText(newClipboardData);
+      console.log('✅ System clipboard updated');
       
+      console.log('✅ appendToClipboard completed successfully');
       return true;
     } catch (error) {
+      console.error('❌ appendToClipboard failed:', error);
       setErrorMessage('Failed to append transcript to clipboard');
       return false;
     }
@@ -532,7 +630,7 @@ export const TranscriptExtractorPopup = () => {
     // Use actual course structure to determine total sections
     try {
       // Get the actual course structure to determine total sections
-      const courseResponse = await ExtensionService.extractCourseStructure();
+      const courseResponse = await (await getExtensionService()).extractCourseStructure();
       if (courseResponse.success && courseResponse.data && courseResponse.data.sections) {
         const totalSections = courseResponse.data.sections.length;
         
@@ -563,6 +661,7 @@ export const TranscriptExtractorPopup = () => {
   };
 
   const handleNextOrCollect = async () => {
+    console.log('🎯 handleNextOrCollect called, batchMode:', batchMode);
     try {
       if (batchMode === 'next') {
         // Navigate to next lecture
@@ -573,7 +672,7 @@ export const TranscriptExtractorPopup = () => {
           setCurrentProcessingLecture(currentVideo.title);
         }
         
-        const response = await ExtensionService.navigateToNextLecture();
+        const response = await (await getExtensionService()).navigateToNextLecture();
         if (response.success) {
           setBatchMode('collect');
           setErrorMessage(''); // Clear any previous errors
@@ -585,7 +684,7 @@ export const TranscriptExtractorPopup = () => {
               setIsNavigating(false);
               
               // Update the current processing lecture after navigation
-              const videoInfo = await ExtensionService.getVideoInfo();
+              const videoInfo = await (await getExtensionService()).getVideoInfo();
               if (videoInfo.success && videoInfo.data) {
                 setCurrentVideo(videoInfo.data); // Update current video info
                 setCurrentProcessingLecture(videoInfo.data.title);
@@ -593,6 +692,13 @@ export const TranscriptExtractorPopup = () => {
               
               // Show success message
               setErrorMessage(''); // Clear any previous errors
+              
+              // Keep popup focused to prevent closing
+              try {
+                window.focus();
+              } catch (focusError) {
+                console.log('Could not focus popup window:', focusError);
+              }
             } catch (error) {
               console.log('Failed to refresh page data after navigation:', error);
               setIsNavigating(false);
@@ -605,9 +711,10 @@ export const TranscriptExtractorPopup = () => {
         }
       } else {
         // Collect transcript from current lecture
+        console.log('📝 Collecting transcript from current lecture...');
         setCurrentProcessingLecture(currentVideo?.title || 'Processing...');
         
-        const response = await ExtensionService.collectCurrentTranscript();
+        const response = await (await getExtensionService()).collectCurrentTranscript();
         if (response.success && response.data) {
           const { lectureId, transcript } = response.data;
           
@@ -641,19 +748,42 @@ export const TranscriptExtractorPopup = () => {
             });
             
             // Append transcript to clipboard
-            await appendToClipboard(transcript, currentVideo?.title || `Lecture ${lectureId}`);
+            console.log('🎯 Attempting to append transcript to clipboard...');
+            const clipboardSuccess = await appendToClipboard(transcript, currentVideo?.title || `Lecture ${lectureId}`);
+            if (clipboardSuccess) {
+              console.log('✅ Successfully appended transcript to clipboard');
+            } else {
+              console.error('❌ Failed to append transcript to clipboard');
+              setErrorMessage('Failed to append transcript to clipboard');
+            }
             
             // Don't increment completed count here - only increment when we move to a new section
             setProgressUpdateTrigger(prev => prev + 1); // Force re-render
           }
           
           // Switch back to next mode
-          setBatchMode('next');
-          setErrorMessage(''); // Clear any previous errors
-          setCurrentProcessingLecture(''); // Clear processing state
+          console.log('🔄 Switching back to next mode after successful collection');
+          
+          // Clear processing state first
+          setCurrentProcessingLecture('');
+          setErrorMessage('');
           
           // Force progress bar update
           setProgressUpdateTrigger(prev => prev + 1);
+          
+          // Keep popup focused to prevent closing
+          try {
+            window.focus();
+          } catch (focusError) {
+            console.log('Could not focus popup window:', focusError);
+          }
+          
+          // Use a more reliable state update approach
+          setTimeout(() => {
+            console.log('🔄 Setting batchMode to next...');
+            setBatchMode('next');
+            console.log('✅ batchMode should now be next');
+          }, 50);
         } else {
           setErrorMessage('Failed to collect transcript');
           setCurrentProcessingLecture(''); // Clear on failure
@@ -865,7 +995,11 @@ export const TranscriptExtractorPopup = () => {
                   <span>Navigating...</span>
                 </div>
               ) : (
-                <span>{batchMode === 'next' ? '➡ Next Section' : '📝 Collect Transcript'}</span>
+                <span>
+                  {batchMode === 'next' ? '➡ Next Section' : '📝 Collect Transcript'}
+                  {/* Debug info */}
+                  <span className="text-xs opacity-75 ml-2">({batchMode})</span>
+                </span>
               )}
             </button>
           </div>

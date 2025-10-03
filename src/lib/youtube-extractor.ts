@@ -748,6 +748,18 @@ export class YouTubeExtractor {
         // Remove any remaining timestamp patterns
         text = text.replace(/^\d+:\d{2}\s*/, '');
         text = text.replace(/^\d+\s+seconds?\s+/, '');
+        
+        // Clean up extra whitespace and normalize
+        text = text.replace(/\s+/g, ' ');
+        
+        // Remove common artifacts
+        text = text.replace(/^\[.*?\]\s*/, ''); // Remove any remaining [timestamp] patterns
+        text = text.replace(/\s*\[.*?\]\s*$/, ''); // Remove trailing [anything] patterns
+        
+        // Only return if we have meaningful content
+        if (text.length < 3 || !/[a-zA-Z]/.test(text)) {
+          return null;
+        }
       }
 
       if (text && text.length > 0) {
@@ -767,18 +779,47 @@ export class YouTubeExtractor {
    */
   private static formatTranscript(entries: YouTubeTranscriptEntry[]): string {
     try {
-      const formattedLines = entries.map(entry => {
-        if (entry.timestamp) {
-          return `[${entry.timestamp}] ${entry.text}`;
-        } else {
-          return entry.text;
-        }
+      // Sort entries by timestamp to ensure proper chronological order
+      const sortedEntries = entries.sort((a, b) => {
+        const timeA = this.parseTimeToSeconds(a.timestamp);
+        const timeB = this.parseTimeToSeconds(b.timestamp);
+        return timeA - timeB;
       });
+
+      const formattedLines = sortedEntries.map(entry => {
+        if (entry.timestamp && entry.text.trim()) {
+          return `[${entry.timestamp}] ${entry.text.trim()}`;
+        } else if (entry.text.trim()) {
+          return entry.text.trim();
+        }
+        return '';
+      }).filter(line => line.length > 0);
 
       return formattedLines.join('\n\n');
     } catch (error) {
       console.error('Error formatting transcript:', error);
-      return entries.map(entry => entry.text).join('\n\n');
+      return entries.map(entry => entry.text.trim()).filter(text => text.length > 0).join('\n\n');
+    }
+  }
+
+  /**
+   * Parse timestamp string to seconds for sorting
+   */
+  private static parseTimeToSeconds(timeStr: string): number {
+    if (!timeStr) return 0;
+    
+    try {
+      const parts = timeStr.split(':');
+      if (parts.length === 2) {
+        // Format: MM:SS
+        return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+      } else if (parts.length === 3) {
+        // Format: HH:MM:SS
+        return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
+      }
+      return 0;
+    } catch {
+      return 0;
     }
   }
 

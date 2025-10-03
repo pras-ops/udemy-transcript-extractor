@@ -414,28 +414,18 @@ class ContentScript {
       const initialUrl = window.location.href;
       const initialLectureId = this.getCurrentLectureId();
       
-      // Click the Next button with multiple methods
+      // Click the Next button with minimal interference to prevent popup closing
       console.log('🎯 Clicking Next button...');
       
-      // Method 1: Direct click
+      // Method 1: Direct click (most reliable)
       (nextButton as HTMLElement).click();
       
-      // Method 2: Dispatch click event (more reliable for SPAs)
+      // Method 2: Dispatch click event (backup for SPAs)
       nextButton.dispatchEvent(new MouseEvent('click', {
         view: window,
         bubbles: true,
         cancelable: true
       }));
-      
-      // Method 3: Try focus + Enter key
-      if (nextButton instanceof HTMLElement) {
-        nextButton.focus();
-        nextButton.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'Enter',
-          bubbles: true,
-          cancelable: true
-        }));
-      }
       
       // Give a moment for the click to register (minimal delay)
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -507,6 +497,13 @@ class ContentScript {
       const lectureId = this.getCurrentLectureId();
       console.log('🎯 Collecting transcript for lecture:', lectureId);
       
+      // Memory management check for batch processing
+      if (this.batchState.isActive) {
+        // Add delay between batch operations to prevent memory buildup
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        console.log('🧹 ContentScript: Added delay for batch processing memory management');
+      }
+      
       // Quick check if page is ready for collection
       const isPageReady = UdemyExtractor.isPageReadyForCollection();
       console.log('🎯 Page ready for collection:', isPageReady);
@@ -527,31 +524,26 @@ class ContentScript {
       console.log('🎯 Transcript is available, proceeding with extraction...');
       
       // Extract transcript
-      const transcript = await this.extractTranscript();
+      let transcript = await this.extractTranscript();
       console.log('🎯 Extract transcript result:', transcript ? `Length: ${transcript.length} chars` : 'null/empty');
       
       if (transcript && transcript.trim().length > 0) {
         console.log('🎯 Transcript extracted successfully, length:', transcript.length);
         console.log('🎯 First 200 chars of transcript:', transcript.substring(0, 200));
         
+        // Memory optimization for batch processing
+        if (this.batchState.isActive && transcript.length > 30000) {
+          console.log('🧹 ContentScript: Large transcript detected, optimizing for batch processing...');
+          // Truncate very long transcripts to prevent memory issues
+          transcript = transcript.substring(0, 30000) + '... [truncated for batch processing]';
+        }
+        
         // Store in batch state
         this.batchState.collectedTranscripts[lectureId] = transcript;
         this.batchState.progress[lectureId] = 'completed';
         
-        // Copy to clipboard using enhanced method for batch processing
-        try {
-          console.log('🎯 Attempting to copy transcript to clipboard...');
-          
-          const clipboardSuccess = await this.copyToClipboard(transcript);
-          if (clipboardSuccess) {
-            console.log('🎯 Successfully copied transcript to clipboard for lecture:', lectureId);
-          } else {
-            console.warn('🎯 Clipboard copy failed for lecture:', lectureId);
-          }
-        } catch (clipboardError) {
-          console.error('🎯 All clipboard copy methods failed:', clipboardError);
-          // Continue anyway - the transcript is still collected
-        }
+        // Note: Clipboard copying is now handled by the popup to prevent conflicts
+        console.log('🎯 Transcript collected successfully - clipboard will be handled by popup');
         
         console.log('🎯 Successfully collected transcript for lecture:', lectureId);
         return { lectureId, transcript };
@@ -561,7 +553,7 @@ class ContentScript {
       }
     } catch (error) {
       const lectureId = this.getCurrentLectureId();
-      console.error('🎯 Failed to collect transcript:', error);
+      console.error('🎯 Failed to collect transcript:', error instanceof Error ? error.message : String(error));
       
       // Store as failed
       this.batchState.collectedTranscripts[lectureId] = 'EXTRACTION_FAILED';
@@ -582,7 +574,7 @@ class ContentScript {
           console.log('🎯 Successfully copied to clipboard using modern API');
           return true;
         } catch (error) {
-          console.log('🎯 Modern clipboard API failed:', error.message);
+          console.log('🎯 Modern clipboard API failed:', error instanceof Error ? error.message : String(error));
         }
       }
     } catch (error) {

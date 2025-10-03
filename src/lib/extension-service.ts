@@ -425,4 +425,91 @@ export class ExtensionService {
       data: { format } 
     });
   }
+
+  /**
+   * Summarize transcript using WebLLM AI
+   */
+  static async summarizeWithAI(transcript: string, options: {
+    mode?: 'balanced' | 'detailed' | 'concise';
+    outputFormat?: 'paragraph' | 'bullet-points' | 'numbered-list';
+    useWebLLM?: boolean;
+    includeTimestamps?: boolean;
+  } = {}): Promise<ExtensionServiceResponse<{
+    summary: string;
+    engine: string;
+    wordCount?: number;
+    hierarchical?: boolean;
+  }>> {
+    try {
+      console.log('🎯 ExtensionService: Starting WebLLM AI summarization...');
+      
+      // Sanitize transcript
+      const sanitizedTranscript = this.sanitizeText(transcript);
+      
+      if (!sanitizedTranscript || sanitizedTranscript.trim().length === 0) {
+        throw new Error('No transcript provided for AI summarization');
+      }
+      
+      console.log('🎯 ExtensionService: Sending AI summarization request to background script...');
+      
+      // Send message to background script to process with offscreen document
+      return new Promise((resolve, reject) => {
+        const messageId = Date.now().toString();
+        
+        // Set up response listener
+        const handleResponse = (message: any) => {
+          if (message.type === 'AI_SUMMARIZE_RESPONSE' && message.messageId === messageId) {
+            chrome.runtime.onMessage.removeListener(handleResponse);
+            
+            if (message.data.success) {
+              resolve({
+                success: true,
+                data: {
+                  summary: message.data.summary,
+                  engine: message.data.engine,
+                  wordCount: message.data.wordCount,
+                  hierarchical: message.data.hierarchical
+                }
+              });
+            } else {
+              resolve({
+                success: false,
+                error: message.data.error || 'AI summarization failed'
+              });
+            }
+          }
+        };
+        
+        chrome.runtime.onMessage.addListener(handleResponse);
+        
+        // Send request to background script
+        chrome.runtime.sendMessage({
+          type: 'AI_SUMMARIZE',
+          messageId,
+          data: {
+            transcript: sanitizedTranscript,
+            options: {
+              mode: options.mode || 'balanced',
+              outputFormat: options.outputFormat || 'paragraph',
+              useWebLLM: options.useWebLLM !== false, // Default to true
+              includeTimestamps: options.includeTimestamps || false
+            }
+          }
+        });
+        
+        // Timeout after 60 seconds
+        setTimeout(() => {
+          chrome.runtime.onMessage.removeListener(handleResponse);
+          reject(new Error('AI summarization timeout'));
+        }, 60000);
+      });
+      
+    } catch (error) {
+      console.error('❌ ExtensionService: AI summarization error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'AI summarization failed'
+      };
+    }
+  }
 }
