@@ -13,7 +13,7 @@
     "unlimitedStorage"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://raw.githubusercontent.com https://*.githubusercontent.com https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn.jsdelivr.net;"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; object-src 'self'; connect-src 'self' https://raw.githubusercontent.com https://*.githubusercontent.com https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn.jsdelivr.net https://mlc.ai https://*.mlc.ai;"
   },
   "host_permissions": [
     "https://*.udemy.com/*",

@@ -2,16 +2,25 @@ import path from 'path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { copy } from 'vite-plugin-copy';
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(), 
+    tailwindcss(),
+    copy([
+      { src: 'public/models/**/*', dest: 'dist/models' },
+      { src: 'public/wasm/**/*', dest: 'dist/wasm' },
+    ])
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
   },
   build: {
+    target: 'esnext', // For WebGPU/WebLLM compatibility
     outDir: 'dist',
     chunkSizeWarningLimit: 2000, // Raise limit to 2MB for AI libraries
     assetsInlineLimit: 0, // Don't inline WASM/ONNX – keep as files

@@ -162,6 +162,27 @@ export const TranscriptExtractorPopup = () => {
     // Apply dark mode by default
     document.documentElement.classList.add('dark');
     
+    // Register popup globally for content script communication
+    (window as any).transcriptExtractorPopup = {
+      handleMessage: (message: any) => {
+        console.log('🎯 Popup: Received message from content script:', message);
+        // Handle AI summarization messages
+        if (message.type === 'AI_SUMMARIZE_RESPONSE') {
+          if (message.data?.success) {
+            setAiSummary(message.data.summary || '');
+            setIsAiProcessing(false);
+          } else {
+            setAiError(message.data?.error || 'Failed to generate summary');
+            setIsAiProcessing(false);
+          }
+        } else if (message.type === 'AI_SUMMARIZE_CHUNK') {
+          setStreamingText(prev => prev + (message.data?.chunk || ''));
+        } else if (message.type === 'WEBLLM_LOAD_PROGRESS' || message.type === 'TRANSFORMERS_LOAD_PROGRESS') {
+          setStreamingProgress(message.data?.progress || 0);
+        }
+      }
+    };
+    
     loadSavedState();
     checkPageAvailability();
     
@@ -200,6 +221,8 @@ export const TranscriptExtractorPopup = () => {
     return () => {
       setExtractionStatus('idle');
       setExtractedTranscript('');
+      // Clean up global reference
+      delete (window as any).transcriptExtractorPopup;
     };
   }, []);
 
@@ -452,8 +475,16 @@ export const TranscriptExtractorPopup = () => {
       return;
     }
     
-    setShowAIPopup(true);
+    // Prevent duplicate requests
+    if (isAiProcessing) {
+      console.log('⚠️ Popup: Already processing AI request, ignoring duplicate');
+      return;
+    }
+    
+    // Set processing flag immediately to prevent rapid clicks
     setIsAiProcessing(true);
+    
+    setShowAIPopup(true);
     setAiError('');
     setStreamingText('');
     setStreamingProgress(0);

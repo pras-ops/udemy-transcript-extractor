@@ -254,18 +254,36 @@ class AISummarizationService {
       
       const messagePromise = new Promise<SummarizationResult>((resolve, reject) => {
         const messageId = Date.now().toString();
+        let responseReceived = false;
         
-        // Set up response listener
-        const responseListener = (response: any) => {
-          if (response.type === 'AI_SUMMARIZE_RESPONSE' && response.data.messageId === messageId) {
+        // Set up response listener with proper message structure
+        const responseListener = (message: any, sender: any, sendResponse: any) => {
+          console.log('🎯 AI Service: Received message in listener:', message.type, message.messageId);
+          
+          // Handle different response formats
+          if (message.type === 'AI_SUMMARIZE_RESPONSE' && message.messageId === messageId) {
+            console.log('🎯 AI Service: Found matching message ID:', messageId);
+            responseReceived = true;
             chrome.runtime.onMessage.removeListener(responseListener);
             
-            if (response.data.success && response.data.summary) {
-              resolve(response.data);
+            if (message.success && message.summary) {
+              resolve(message);
             } else {
-              reject(new Error(response.data.error || 'Background summarization failed'));
+              reject(new Error(message.error || 'Background summarization failed'));
+            }
+          } else if (message.type === 'AI_SUMMARIZE_RESPONSE' && message.data && message.data.messageId === messageId) {
+            console.log('🎯 AI Service: Found matching message ID in data:', messageId);
+            responseReceived = true;
+            chrome.runtime.onMessage.removeListener(responseListener);
+            
+            if (message.data.success && message.data.summary) {
+              resolve(message.data);
+            } else {
+              reject(new Error(message.data.error || 'Background summarization failed'));
             }
           }
+          
+          return false; // Don't keep channel open
         };
         
         chrome.runtime.onMessage.addListener(responseListener);
@@ -278,7 +296,44 @@ class AISummarizationService {
             options
           },
           messageId: messageId
-        }).catch(reject);
+        }).catch((error) => {
+          if (!responseReceived) {
+            chrome.runtime.onMessage.removeListener(responseListener);
+            reject(error);
+          }
+        });
+        
+        // Also set up polling as backup
+        const pollInterval = setInterval(() => {
+          if (responseReceived) {
+            clearInterval(pollInterval);
+            return;
+          }
+          
+          chrome.storage.local.get([`ai_summary_${messageId}`], (result) => {
+            if (result[`ai_summary_${messageId}`]) {
+              console.log('🎯 AI Service: Found response in storage:', messageId);
+              responseReceived = true;
+              clearInterval(pollInterval);
+              chrome.runtime.onMessage.removeListener(responseListener);
+              
+              const response = result[`ai_summary_${messageId}`];
+              if (response.success && response.summary) {
+                resolve(response);
+              } else {
+                reject(new Error(response.error || 'Background summarization failed'));
+              }
+            }
+          });
+        }, 500); // Poll every 500ms
+        
+        // Cleanup polling after timeout
+        setTimeout(() => {
+          if (!responseReceived) {
+            clearInterval(pollInterval);
+            chrome.runtime.onMessage.removeListener(responseListener);
+          }
+        }, 30000);
       });
       
       const response = await Promise.race([messagePromise, timeoutPromise]);
@@ -1264,6 +1319,44 @@ This should be like comprehensive lecture notes that can be used for deep study,
     }
   }
 
+  // Method to test communication with offscreen document
+  async testCommunication(): Promise<{ success: boolean; message?: string; error?: string }> {
+    if (!this.isChromeExtensionContext()) {
+      return { success: false, error: 'Not in Chrome extension context' };
+    }
+
+    try {
+      console.log('🎯 AI Service: Testing communication with offscreen document...');
+      
+      const response = await new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Communication test timeout'));
+        }, 5000); // 5 second timeout
+
+        chrome.runtime.sendMessage({
+          type: 'TEST_COMMUNICATION'
+        }, (response) => {
+          clearTimeout(timeout);
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        });
+      });
+
+      console.log('✅ AI Service: Communication test successful:', response);
+      return { success: true, message: response.message || 'Communication successful' };
+      
+    } catch (error) {
+      console.error('❌ AI Service: Communication test failed:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Communication test failed' 
+      };
+    }
+  }
+
   // Method to get setup instructions
   getSetupInstructions(): string {
     return `
@@ -1273,7 +1366,7 @@ AI Summarization Status:
    - Advanced AI summarization using WebLLM
    - Local processing in offscreen document
    - No external data transmission
-   - Llama-3-2-3B model for high-quality summaries
+   - Phi-3.5-mini model for high-quality summaries
 
 ⚠️ IMPORTANT: WebGPU Setup Required
    - For optimal performance, enable WebGPU in Chrome:
@@ -1289,6 +1382,7 @@ AI Summarization Status:
    - Multiple summary modes (Simple overview, Study notes)
    - Streaming responses for real-time updates
    - Automatic WebGPU detection and fallback
+   - Improved offscreen communication with fallback
 
 📚 This extension provides high-quality AI-powered transcript summarization while maintaining privacy through local processing.
     `.trim();

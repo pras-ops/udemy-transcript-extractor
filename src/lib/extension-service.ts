@@ -456,31 +456,72 @@ export class ExtensionService {
       return new Promise((resolve, reject) => {
         const messageId = Date.now().toString();
         
-        // Set up response listener
+        // Set up response listener and storage polling
         const handleResponse = (message: any) => {
-          if (message.type === 'AI_SUMMARIZE_RESPONSE' && message.messageId === messageId) {
+          // Check for both direct responses and forwarded responses with messageId
+          if ((message.type === 'AI_SUMMARIZE_RESPONSE' && message.messageId === messageId) ||
+              (message.messageId === messageId)) {
             chrome.runtime.onMessage.removeListener(handleResponse);
             
-            if (message.data.success) {
+            if (message.success) {
               resolve({
                 success: true,
                 data: {
-                  summary: message.data.summary,
-                  engine: message.data.engine,
-                  wordCount: message.data.wordCount,
-                  hierarchical: message.data.hierarchical
+                  summary: message.summary,
+                  engine: message.engine,
+                  wordCount: message.wordCount,
+                  hierarchical: message.hierarchical
                 }
               });
             } else {
               resolve({
                 success: false,
-                error: message.data.error || 'AI summarization failed'
+                error: message.error || 'AI summarization failed'
               });
             }
           }
         };
         
         chrome.runtime.onMessage.addListener(handleResponse);
+        
+        // Also poll storage for response (in case popup closes)
+        const pollStorage = async () => {
+          try {
+            const result = await chrome.storage.local.get(`ai_summary_${messageId}`);
+            if (result[`ai_summary_${messageId}`]) {
+              const storedResponse = result[`ai_summary_${messageId}`];
+              chrome.runtime.onMessage.removeListener(handleResponse);
+              
+              // Clean up storage
+              chrome.storage.local.remove(`ai_summary_${messageId}`);
+              
+              if (storedResponse.success) {
+                resolve({
+                  success: true,
+                  data: {
+                    summary: storedResponse.summary,
+                    engine: storedResponse.engine,
+                    wordCount: storedResponse.wordCount,
+                    hierarchical: storedResponse.hierarchical
+                  }
+                });
+              } else {
+                resolve({
+                  success: false,
+                  error: storedResponse.error || 'AI summarization failed'
+                });
+              }
+            }
+          } catch (error) {
+            // Ignore storage errors, continue polling
+          }
+        };
+        
+        // Poll storage every 1 second
+        const intervalId = setInterval(pollStorage, 1000);
+        
+        // Store interval ID for cleanup
+        (handleResponse as any).intervalId = intervalId;
         
         // Send request to background script
         chrome.runtime.sendMessage({
@@ -500,6 +541,9 @@ export class ExtensionService {
         // Timeout after 60 seconds
         setTimeout(() => {
           chrome.runtime.onMessage.removeListener(handleResponse);
+          if ((handleResponse as any).intervalId) {
+            clearInterval((handleResponse as any).intervalId);
+          }
           reject(new Error('AI summarization timeout'));
         }, 60000);
       });

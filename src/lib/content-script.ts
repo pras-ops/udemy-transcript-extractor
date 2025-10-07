@@ -21,6 +21,9 @@ if (typeof YouTubeExtractor === 'undefined') {
 declare global {
   interface Window {
     transcriptExtractorContentScript?: ContentScript;
+    transcriptExtractorPopup?: {
+      handleMessage: (message: any) => void;
+    };
   }
 }
 
@@ -62,10 +65,23 @@ class ContentScript {
       
       console.log('🎯 Initializing NEW Content Script v3.0.0...');
       
-      // Listen for messages from popup
-      chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sendResponse) => {
+      // Listen for messages from popup and background
+      chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
         try {
           console.log('🎯 Content script received message:', message);
+          
+          // Handle AI summarization responses from background
+          if (message.type === 'AI_SUMMARIZE_RESPONSE' || message.type === 'AI_SUMMARIZE_CHUNK' || 
+              message.type === 'WEBLLM_LOAD_PROGRESS' || message.type === 'TRANSFORMERS_LOAD_PROGRESS') {
+            // Forward to popup if it exists
+            if (window.transcriptExtractorPopup) {
+              window.transcriptExtractorPopup.handleMessage(message);
+            }
+            sendResponse({ acknowledged: true });
+            return true;
+          }
+          
+          // Handle other messages (extraction, etc.)
           this.handleMessage(message, sendResponse);
           return true; // Keep message channel open for async response
         } catch (error) {
