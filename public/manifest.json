@@ -8,7 +8,6 @@
     "storage",
     "clipboardWrite",
     "scripting",
-    "offscreen",
     "alarms",
     "unlimitedStorage"
   ],
@@ -27,7 +26,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["models/*", "sw.js", "udemy-extractor.js", "index.js", "offscreen.html", "offscreen.js", "infer-worker.js", "wasm/*"],
+      "resources": ["models/*", "wasm/*"],
       "matches": ["https://*.udemy.com/*", "https://*.coursera.org/*", "https://*.youtube.com/*", "https://*.edx.org/*", "https://*.pluralsight.com/*"]
     }
   ],
@@ -49,10 +48,7 @@
     }
   ],
   "background": {
-    "service_worker": "background.js"
-  },
-  "offscreen": {
-    "reasons": ["WORKERS"],
-    "justification": "WebLLM AI processing for transcript summarization"
+    "service_worker": "background.js",
+    "type": "module"
   }
 }

@@ -21,26 +21,8 @@ async function buildExtension() {
   fs.copyFileSync(manifestPath, distManifestPath);
   console.log('✓ Copied manifest.json');
 
-  // Background script will be built by vite from src/background.ts
-  console.log('✓ background.js will be built by vite from src/background.ts');
-
-  // Copy service worker for WebLLM
-  const swPath = path.join(__dirname, '../public/sw.ts');
-  const distSwPath = path.join(distDir, 'sw.js');
-  if (fs.existsSync(swPath)) {
-    fs.copyFileSync(swPath, distSwPath);
-    console.log('✓ Copied service worker (sw.js)');
-  }
-
-  // Copy offscreen document HTML (JavaScript will be built by vite)
-  const offscreenHtmlPath = path.join(__dirname, '../public/offscreen.html');
-  const distOffscreenHtmlPath = path.join(distDir, 'offscreen.html');
-  if (fs.existsSync(offscreenHtmlPath)) {
-    fs.copyFileSync(offscreenHtmlPath, distOffscreenHtmlPath);
-    console.log('✓ Copied offscreen.html');
-  }
-  
-  console.log('✓ offscreen.js will be built by vite from src/offscreen.ts');
+  // Background script will be built by vite from src/background.ts (Service Worker with WebLLM)
+  console.log('✓ background.js (Service Worker) will be built by vite from src/background.ts');
 
   // Copy icons (if they exist)
   const iconsDir = path.join(__dirname, '../public/icons');

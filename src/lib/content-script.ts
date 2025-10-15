@@ -70,16 +70,8 @@ class ContentScript {
         try {
           console.log('🎯 Content script received message:', message);
           
-          // Handle AI summarization responses from background
-          if (message.type === 'AI_SUMMARIZE_RESPONSE' || message.type === 'AI_SUMMARIZE_CHUNK' || 
-              message.type === 'WEBLLM_LOAD_PROGRESS' || message.type === 'TRANSFORMERS_LOAD_PROGRESS') {
-            // Forward to popup if it exists
-            if (window.transcriptExtractorPopup) {
-              window.transcriptExtractorPopup.handleMessage(message);
-            }
-            sendResponse({ acknowledged: true });
-            return true;
-          }
+          // Service Worker pattern - no AI message forwarding needed
+          // AI summarization is handled directly via ExtensionService.summarizeWithAI()
           
           // Handle other messages (extraction, etc.)
           this.handleMessage(message, sendResponse);
