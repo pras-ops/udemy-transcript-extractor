@@ -1,34 +1,20 @@
 {
   "manifest_version": 3,
   "name": "Transcript Extractor",
-  "version": "3.6.5",
-  "description": "Extract transcripts from educational platforms with AI-powered dynamic subject detection and intelligent summarization",
+  "version": "4.0.0",
+  "description": "Extract transcripts from educational platforms with smart sequential processing and multiple export formats",
   "permissions": [
     "activeTab",
     "storage",
     "clipboardWrite",
     "scripting",
-    "alarms",
-    "unlimitedStorage"
+    "offscreen"
   ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; object-src 'self'; connect-src 'self' https://raw.githubusercontent.com https://*.githubusercontent.com https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn.jsdelivr.net https://mlc.ai https://*.mlc.ai;"
-  },
   "host_permissions": [
     "https://*.udemy.com/*",
     "https://*.coursera.org/*",
     "https://*.youtube.com/*",
-    "https://www.youtube.com/*",
-    "https://video.google.com/*",
-    "https://*.edx.org/*",
-    "https://*.pluralsight.com/*",
-    "https://huggingface.co/*"
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["models/*", "wasm/*"],
-      "matches": ["https://*.udemy.com/*", "https://*.coursera.org/*", "https://*.youtube.com/*", "https://*.edx.org/*", "https://*.pluralsight.com/*"]
-    }
+    "https://www.youtube.com/*"
   ],
   "action": {
     "default_popup": "index.html",
@@ -39,9 +25,7 @@
       "matches": [
         "https://*.udemy.com/*",
         "https://*.coursera.org/*",
-        "https://*.youtube.com/*",
-        "https://*.edx.org/*",
-        "https://*.pluralsight.com/*"
+        "https://*.youtube.com/*"
       ],
       "js": ["content-script.js"],
       "run_at": "document_idle"
@@ -50,5 +34,8 @@
   "background": {
     "service_worker": "background.js",
     "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   }
 }

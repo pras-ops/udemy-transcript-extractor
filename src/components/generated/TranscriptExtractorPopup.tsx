@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { useState, useEffect, useMemo } from 'react';
-import { Sun, Moon, Download, ChevronDown, Clipboard, Play, Lock, Github, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { Sun, Moon, Download, ChevronDown, Clipboard, Play, Lock, Github, AlertCircle, CheckCircle, Clock, Bot } from 'lucide-react';
 import { StorageService } from '../../lib/storage-service';
+import { ChatWithTranscript } from '../ChatWithTranscript';
 
 // Helper function for dynamic ExtensionService import
 const getExtensionService = async () => {
@@ -87,6 +88,9 @@ export const TranscriptExtractorPopup = () => {
   
   // Simple navigation state
   const [isNavigating, setIsNavigating] = useState(false);
+  
+  // AI Chat state
+  const [showAIChat, setShowAIChat] = useState(false);
 
   const handleThemeToggle = () => {
     const newDarkMode = !isDarkMode;
@@ -473,64 +477,85 @@ export const TranscriptExtractorPopup = () => {
           Download
         </button>
       </div>
+      
+      {/* AI Chat Button */}
+      <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+        <button
+          onClick={() => setShowAIChat(!showAIChat)}
+          className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-sm font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/30 hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <Bot className="w-4 h-4" />
+          {showAIChat ? 'Close AI Chat' : 'Chat with AI'}
+        </button>
+      </div>
     </div>;
 
   return (
     <>
-      <div className="w-[360px] h-[480px] bg-white dark:bg-slate-900 flex flex-col shadow-2xl rounded-[48px] overflow-hidden border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm">
-        {/* Ultra Curvy Header */}
-        <header className="bg-gradient-to-r from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 border-b border-slate-200/30 dark:border-slate-700/30 px-6 py-4 rounded-t-[48px]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
-                <TranscriptIcon className="w-5 h-5 text-white" />
+      {!showAIChat ? (
+        <div className="w-[360px] h-[480px] bg-white dark:bg-slate-900 flex flex-col shadow-2xl rounded-[48px] overflow-hidden border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm">
+          {/* Ultra Curvy Header */}
+          <header className="bg-gradient-to-r from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 border-b border-slate-200/30 dark:border-slate-700/30 px-6 py-4 rounded-t-[48px]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
+                  <TranscriptIcon className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                    Transcript Extractor
+                  </h1>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Extract video transcripts</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
-                  Transcript Extractor
-                </h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Extract video transcripts</p>
-              </div>
+              
+              <button 
+                onClick={handleThemeToggle} 
+                className="p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-all duration-200 hover:scale-105 active:scale-95" 
+                aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                {isDarkMode ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-slate-600 dark:text-slate-300" />}
+              </button>
             </div>
-            
-            <button 
-              onClick={handleThemeToggle} 
-              className="p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-all duration-200 hover:scale-105 active:scale-95" 
-              aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              {isDarkMode ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-slate-600 dark:text-slate-300" />}
-            </button>
-          </div>
-        </header>
+          </header>
 
-        {/* Main Content */}
-        <main className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-900">
-          <div className="p-5 space-y-5">
-            <ExtractSection />
-            {/* Show export options only after successful extraction */}
-            {extractionStatus === 'success' && extractedTranscript && (
-              <ExportOptionsSection />
-            )}
-          </div>
-        </main>
+          {/* Main Content */}
+          <main className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-900">
+            <div className="p-5 space-y-5">
+              <ExtractSection />
+              {/* Show export options only after successful extraction */}
+              {extractionStatus === 'success' && extractedTranscript && (
+                <ExportOptionsSection />
+              )}
+            </div>
+          </main>
 
-        {/* Ultra Curvy Footer */}
-        <footer className="bg-gradient-to-r from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 border-t border-slate-200/30 dark:border-slate-700/30 px-6 py-3 rounded-b-[48px]">
-          <div className="flex items-center justify-center gap-4 text-xs text-slate-500 dark:text-slate-400 font-medium">
-            <span className="flex items-center gap-1.5">
-              <Lock className="w-3 h-3" />
-              Local-first
-            </span>
-            <span>•</span>
-            <span className="flex items-center gap-1.5">
-              <Github className="w-3 h-3" />
-              Open Source
-            </span>
-            <span>•</span>
-            <span>MIT License</span>
-          </div>
-        </footer>
-      </div>
+          {/* Ultra Curvy Footer */}
+          <footer className="bg-gradient-to-r from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 border-t border-slate-200/30 dark:border-slate-700/30 px-6 py-3 rounded-b-[48px]">
+            <div className="flex items-center justify-center gap-4 text-xs text-slate-500 dark:text-slate-400 font-medium">
+              <span className="flex items-center gap-1.5">
+                <Lock className="w-3 h-3" />
+                Local-first
+              </span>
+              <span>•</span>
+              <span className="flex items-center gap-1.5">
+                <Github className="w-3 h-3" />
+                Open Source
+              </span>
+              <span>•</span>
+              <span>MIT License</span>
+            </div>
+          </footer>
+        </div>
+      ) : (
+        <div className="w-[600px] h-[600px]">
+          <ChatWithTranscript 
+            transcript={extractedTranscript}
+            isVisible={showAIChat}
+            onClose={() => setShowAIChat(false)}
+          />
+        </div>
+      )}
     </>
   );
 };

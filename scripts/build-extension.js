@@ -21,6 +21,14 @@ async function buildExtension() {
   fs.copyFileSync(manifestPath, distManifestPath);
   console.log('✓ Copied manifest.json');
 
+  // Copy offscreen.html for WebLLM
+  const offscreenPath = path.join(__dirname, '../public/offscreen.html');
+  const distOffscreenPath = path.join(distDir, 'offscreen.html');
+  if (fs.existsSync(offscreenPath)) {
+    fs.copyFileSync(offscreenPath, distOffscreenPath);
+    console.log('✓ Copied offscreen.html');
+  }
+
   // Background script will be built by vite from src/background.ts (Service Worker with WebLLM)
   console.log('✓ background.js (Service Worker) will be built by vite from src/background.ts');
 
