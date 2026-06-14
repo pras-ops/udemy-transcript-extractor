@@ -331,29 +331,120 @@ export class CourseraExtractor {
       }
 
       const videoInfo = this.getCurrentVideoInfo();
-      if (!videoInfo) {
-        return null;
-      }
+      
+      // Find all links to lectures/readings/supplements
+      const allLinks = Array.from(document.querySelectorAll('a[href*="/learn/"]'));
+      console.log(`🎯 Coursera Structure: Found ${allLinks.length} total learning links`);
+      
+      const courseItems: any[] = [];
+      
+      allLinks.forEach((linkEl, index) => {
+        const href = linkEl.getAttribute('href') || '';
+        const match = href.match(/\/learn\/([^/]+)\/(lecture|reading|supplement|item)\/([^/]+)/);
+        if (!match) return;
+        
+        const type = match[2];
+        const itemId = match[3];
+        const title = linkEl.textContent?.trim() || 'Untitled Content';
+        
+        // Find duration if any
+        let duration = 'Unknown';
+        const durationMatch = linkEl.parentElement?.textContent?.match(/(\d+)\s*(?:min|m|minute)/i);
+        if (durationMatch) {
+          duration = `${durationMatch[1]} min`;
+        }
+        
+        // Attempt to find preceding section header
+        let sectionTitle = 'Course Content';
+        let sibling: Element | null = linkEl.parentElement;
+        
+        // Traverse up parent tree to look for any container headers or structural headings
+        while (sibling) {
+          const heading = sibling.querySelector('h1, h2, h3, h4, [class*="heading"], [class*="title"], [class*="Module"], [class*="Lesson"]');
+          if (heading && heading.textContent && heading.textContent.trim().length > 0) {
+            const headingText = heading.textContent.trim().replace(/\s+/g, ' ');
+            // Make sure heading text isn't exactly the lecture title
+            if (headingText !== title && headingText.length < 100) {
+              sectionTitle = headingText;
+              break;
+            }
+          }
+          sibling = sibling.parentElement;
+        }
+        
+        courseItems.push({
+          id: itemId,
+          title: title,
+          url: href.startsWith('http') ? href : window.location.origin + href,
+          duration: duration,
+          sectionTitle: sectionTitle,
+          type: type
+        });
+      });
 
-      // For Coursera, return a simple structure with just the current video
-      // In a full implementation, you might want to extract the course modules
-      return {
-        title: videoInfo.title,
-        instructor: 'Coursera Instructor',
-        sections: [{
-          title: 'Current Video',
-          lectures: [{
+      console.log(`🎯 Coursera Structure: Filtered ${courseItems.length} valid course items`);
+
+      // If we couldn't find any course links in the DOM, fallback to current video only
+      if (courseItems.length === 0) {
+        if (!videoInfo) return null;
+        return {
+          title: videoInfo.title,
+          instructor: 'Coursera Instructor',
+          sections: [{
+            title: 'Current Content',
+            lectures: [{
+              id: videoInfo.videoId,
+              title: videoInfo.title,
+              url: videoInfo.url,
+              isCompleted: false,
+              duration: 'Unknown'
+            }]
+          }],
+          currentLecture: {
             id: videoInfo.videoId,
             title: videoInfo.title,
             url: videoInfo.url,
             isCompleted: false,
             duration: 'Unknown'
-          }]
-        }],
+          }
+        };
+      }
+
+      // Group items by section title
+      const sectionsMap: Record<string, any[]> = {};
+      courseItems.forEach(item => {
+        if (!sectionsMap[item.sectionTitle]) {
+          sectionsMap[item.sectionTitle] = [];
+        }
+        if (!sectionsMap[item.sectionTitle].some(x => x.id === item.id)) {
+          sectionsMap[item.sectionTitle].push({
+            id: item.id,
+            title: item.title,
+            url: item.url,
+            isCompleted: false,
+            duration: item.duration
+          });
+        }
+      });
+
+      const sections = Object.entries(sectionsMap).map(([title, lectures]) => ({
+        title,
+        lectures
+      }));
+
+      // Find current item info or default to first
+      const currentId = videoInfo?.videoId || courseItems[0]?.id;
+      const currentTitle = videoInfo?.title || courseItems[0]?.title;
+      const currentUrl = videoInfo?.url || courseItems[0]?.url;
+
+      return {
+        title: document.title.replace(' | Coursera', '').trim() || 'Coursera Course',
+        instructor: 'Coursera Instructor',
+        sections: sections,
         currentLecture: {
-          id: videoInfo.videoId,
-          title: videoInfo.title,
-          url: videoInfo.url,
+          id: currentId,
+          title: currentTitle,
+          url: currentUrl,
           isCompleted: false,
           duration: 'Unknown'
         }

@@ -20,7 +20,7 @@ function testDeployment() {
     console.log('✅ Manifest name:', manifest.name);
     
     // Check required permissions
-    const requiredPermissions = ['activeTab', 'storage', 'scripting', 'offscreen'];
+    const requiredPermissions = ['activeTab', 'storage', 'scripting'];
     const missingPermissions = requiredPermissions.filter(perm => 
       !manifest.permissions.includes(perm)
     );
@@ -30,14 +30,6 @@ function testDeployment() {
     } else {
       console.error('❌ Missing permissions:', missingPermissions);
       allTestsPassed = false;
-    }
-    
-    // Check CSP
-    if (manifest.content_security_policy && 
-        manifest.content_security_policy.extension_pages.includes('unsafe-eval')) {
-      console.log('✅ CSP allows AI model execution');
-    } else {
-      console.warn('⚠️ CSP may block AI model execution');
     }
     
   } catch (error) {
@@ -53,7 +45,7 @@ function testDeployment() {
     allTestsPassed = false;
   } else {
     const distFiles = fs.readdirSync(distPath);
-    const requiredFiles = ['manifest.json', 'background.js', 'content-script.js', 'offscreen.js', 'index.html'];
+    const requiredFiles = ['manifest.json', 'background.js', 'content-script.js', 'index.html'];
     
     requiredFiles.forEach(file => {
       if (distFiles.includes(file)) {
@@ -108,36 +100,7 @@ function testDeployment() {
     allTestsPassed = false;
   }
   
-  // Test 5: Check for AI model configuration
-  console.log('\n🤖 Testing AI model configuration...');
-  try {
-    const offscreenPath = path.join(__dirname, '..', 'src', 'offscreen.ts');
-    const offscreenContent = fs.readFileSync(offscreenPath, 'utf8');
-    
-    if (offscreenContent.includes('local_files_only: false')) {
-      console.log('✅ Transformers.js configured for remote models');
-    } else {
-      console.warn('⚠️ Transformers.js may be configured for local-only models');
-    }
-    
-    if (offscreenContent.includes('allow_remote: true')) {
-      console.log('✅ Remote model access enabled');
-    } else {
-      console.warn('⚠️ Remote model access may be disabled');
-    }
-    
-    if (offscreenContent.includes('use_cdn: true')) {
-      console.log('✅ CDN access enabled');
-    } else {
-      console.warn('⚠️ CDN access may be disabled');
-    }
-    
-  } catch (error) {
-    console.error('❌ AI configuration check error:', error.message);
-    allTestsPassed = false;
-  }
-  
-  // Test 6: Check for security issues
+  // Test 5: Check for security configuration
   console.log('\n🔒 Testing security configuration...');
   try {
     const manifestPath = path.join(__dirname, '..', 'public', 'manifest.json');
@@ -145,21 +108,9 @@ function testDeployment() {
     
     // Check for unlimitedStorage permission
     if (manifest.permissions.includes('unlimitedStorage')) {
-      console.log('✅ unlimitedStorage permission present (needed for AI models)');
+      console.log('✅ unlimitedStorage permission present (good for large transcripts)');
     } else {
-      console.warn('⚠️ unlimitedStorage permission missing (may cause AI model issues)');
-    }
-    
-    // Check host permissions for AI CDNs
-    const aiCDNs = ['huggingface.co', 'cdn.jsdelivr.net', 'unpkg.com'];
-    const hasAICDNs = aiCDNs.some(cdn => 
-      manifest.host_permissions.some(perm => perm.includes(cdn))
-    );
-    
-    if (hasAICDNs) {
-      console.log('✅ AI CDN host permissions present');
-    } else {
-      console.warn('⚠️ AI CDN host permissions missing');
+      console.warn('⚠️ unlimitedStorage permission missing');
     }
     
   } catch (error) {

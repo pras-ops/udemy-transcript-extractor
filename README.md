@@ -3,7 +3,7 @@
 A powerful Chrome extension that automatically extracts and collects transcripts from educational video platforms. Built for content creators, students, and professionals who need quick access to educational content.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-blue?logo=google-chrome)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/version-4.0.0-green.svg)](https://github.com/your-username/transcript-extractor)
+[![Version](https://img.shields.io/badge/version-4.2.0-green.svg)](https://github.com/your-username/transcript-extractor)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## 🎯 Why I Built This
@@ -25,6 +25,7 @@ Transcript Extractor - a one-click solution that extracts transcripts instantly,
 - **One-Click Extraction** - Extract transcript from any video instantly
 - **Batch Processing** - Automatically collect transcripts from multiple videos in a course
 - **Multiple Export Formats** - TXT, Markdown, JSON, and RAG formats
+- **Local AI Chat** - Chat directly with transcripts using WebLLM and local Llama 3.2 1B model
 - **Smart Progress Tracking** - Real-time progress with section-based counting
 - **Automatic Clipboard** - Transcripts copied to clipboard automatically
 - **Dark Mode UI** - Modern dark theme for better viewing experience
@@ -174,14 +175,15 @@ We welcome contributions! Here's how you can help:
 
 ## 📊 Project Status
 
-### **Current Status: v4.0.0 Release**
+### **Current Status: v4.2.0 Release**
 - ✅ All core features working
-- ✅ Clean, focused codebase
+- ✅ Re-integrated local AI Chat feature (Llama 3.2 1B via WebLLM)
+- ✅ Expanded Coursera and YouTube Playlist support
+- ✅ Clean, optimized codebase (only 5.5MB unpacked)
 - ✅ User-tested and refined
-- ✅ Comprehensive error handling
-- ✅ Multi-platform support
+- ✅ Comprehensive error handling and deployment checks
 - ✅ Batch collection with progress tracking
-- ✅ Multiple export formats
+- ✅ Multiple export formats (TXT, Markdown, JSON, RAG)
 
 ### **Development Philosophy**
 - **Simplicity Over Complexity** - Simple solutions are more reliable
@@ -301,7 +303,19 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ---
 
-## 🎉 **What's New in v4.0.0**
+## 🎉 **What's New in v4.2.0**
+
+### **🤖 Local AI Chat Feature (Re-integrated)**
+- **Interactive Chat**: Chat directly with video transcripts to summarize or extract key points.
+- **WebLLM Engine**: Uses GPU acceleration via WebGPU for fast local inference.
+- **Llama 3.2 1B model**: Lightweight 500MB model for low memory usage and high speed.
+- **Chrome Offscreen Document**: Implements Chrome's Offscreen API to run WebGPU in service-worker architecture.
+- **Cached Models**: Model downloads once and is stored securely in browser cache.
+
+### **📚 Multi-Platform Expansion**
+- **Coursera Support**: Added complete transcript extraction and reading material capturing.
+- **YouTube Playlists**: Extract structures and compile transcripts from full playlists.
+- **Udemy Support**: Robust batch extraction and course structure scraping.
 
 ### **🎨 Modern Ultra-Curvy Design**
 - **48px Border Radius** - Ultra-smooth, pill-like appearance
@@ -310,56 +324,11 @@ This project is open source and available under the [MIT License](LICENSE).
 - **Enhanced Animations** - Smooth micro-interactions and hover effects
 - **Dark Mode Support** - Beautiful dark theme with proper contrast
 
-### **🚀 Improved User Experience**
-- **Smart Button Logic** - "Extract Transcript" → "Next Lecture & Extract" after success
-- **Sequential Processing** - Streamlined workflow for multiple video extraction
-- **Real-time Feedback** - Success animations and progress indicators
-- **Better Error Handling** - Clear error messages and recovery options
-- **Responsive Design** - Optimized for different screen sizes
-
-### **🎯 Focused on Core Competency**
-- **Removed AI Features** - Simplified to focus on what we do best: transcript extraction
-- **Improved Performance** - 70% smaller package size (~15MB vs ~85MB)
-- **Faster Startup** - Extension loads instantly
-- **Better Reliability** - Fewer dependencies means fewer potential issues
-
-### **🧹 Clean Architecture**
-- **Simplified Codebase** - Removed ~2000+ lines of AI-related code
-- **Better Maintainability** - Easier to add new features and fix bugs
-- **Improved Documentation** - Clearer, more focused documentation
-- **Modern Stack** - Latest React 19, TypeScript, and Tailwind CSS
-
-### **🔒 Privacy-First**
-- **Local Processing** - All data stays on your device
-- **No External APIs** - No data sent to third-party services
-- **No Tracking** - No telemetry or usage analytics
-- **Secure** - Following Chrome extension best practices
-
-### **📦 What Was Removed**
-- AI summarization features (WebLLM, Transformers.js)
-- Model files and WASM binaries
-- AI-related dependencies
-- Complex performance detection
-- Heavy processing libraries
-
-### **💡 Why Remove AI?**
-We realized that trying to do both transcript extraction and AI summarization in one extension made it:
-- Too large (~85MB)
-- Too complex to maintain
-- Slower to load
-- More prone to errors
-
-By focusing on transcript extraction only, we deliver:
-- A lean, fast extension
-- Better reliability
-- Easier maintenance
-- Faster updates
-
-**For AI-powered summarization**, we recommend:
-1. Extract transcript with this extension
-2. Use your favorite AI tool (ChatGPT, Claude, NotebookLLM, etc.)
-3. Get better results with more powerful, up-to-date AI models
+### **🧹 Clean Architecture & Reliability**
+- **Vite Bundler**: Optimized entry chunks for backgrounds, popups, and offscreen views.
+- **Automatic Deployment Checks**: Included a deployment validation script.
+- **Secure permissions**: Includes `unlimitedStorage` and CDN host permissions in `manifest.json`.
 
 ---
 
-**Ready to extract transcripts efficiently? Install the extension and start saving time today!**
+**Ready to extract and chat with transcripts? Install the extension and start saving time today!**

@@ -192,12 +192,16 @@ export class UdemyExtractor {
         const duration = this.extractLectureDuration(linkEl);
         const isCurrent = linkEl.classList.contains('curriculum-item-link--is-current--2mKk4') || 
                          linkEl.classList.contains('is-current');
+        const href = linkEl.getAttribute('href') || '';
+        const match = href.match(/\/lecture\/(\d+)/);
+        const realId = match ? match[1] : `lecture-${index}`;
 
         lectures.push({
-          id: `lecture-${index}`,
+          id: realId,
           title: title,
           duration: duration,
-          isCurrent: isCurrent
+          isCurrent: isCurrent,
+          url: href.startsWith('http') ? href : window.location.origin + href
         });
       });
     } else {
@@ -206,12 +210,16 @@ export class UdemyExtractor {
         const duration = this.extractLectureDuration(lectureEl);
         const isCurrent = lectureEl.classList.contains('curriculum-item-link--is-current--2mKk4') ||
                          lectureEl.classList.contains('is-current');
+        const href = lectureEl.getAttribute('href') || lectureEl.querySelector('a')?.getAttribute('href') || '';
+        const match = href.match(/\/lecture\/(\d+)/);
+        const realId = match ? match[1] : `lecture-${index}`;
 
         lectures.push({
-          id: `lecture-${index}`,
+          id: realId,
           title: title,
           duration: duration,
-          isCurrent: isCurrent
+          isCurrent: isCurrent,
+          url: href.startsWith('http') ? href : window.location.origin + href
         });
       });
     }
@@ -265,8 +273,12 @@ export class UdemyExtractor {
     const currentEl = document.querySelector('.curriculum-item-link--is-current--2mKk4');
     if (!currentEl) return undefined;
 
+    const href = currentEl.getAttribute('href') || currentEl.querySelector('a')?.getAttribute('href') || '';
+    const match = href.match(/\/lecture\/(\d+)/);
+    const realId = match ? match[1] : 'current-lecture';
+
     return {
-      id: 'current-lecture',
+      id: realId,
       title: this.extractLectureTitle(currentEl),
       duration: this.extractLectureDuration(currentEl),
       isCurrent: true

@@ -15,8 +15,8 @@ export interface ExtensionState {
   exportFormat: 'markdown' | 'txt' | 'json' | 'rag';
   exportTarget: 'clipboard' | 'download';
   includeTimestamps: boolean;
-  clipboardData: string;
-  clipboardEntries: number;
+  clipboardData?: string;
+  clipboardEntries?: number;
 }
 
 export class StorageService {

@@ -23,8 +23,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         'content-script': path.resolve(__dirname, 'src/lib/content-script.ts'),
-        background: path.resolve(__dirname, 'src/background.ts'),
-        offscreen: path.resolve(__dirname, 'src/offscreen/offscreen.ts')
+        background: path.resolve(__dirname, 'src/background.ts')
       },
       output: {
         entryFileNames: '[name].js',

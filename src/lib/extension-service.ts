@@ -425,4 +425,11 @@ export class ExtensionService {
       data: { format } 
     });
   }
+
+  /**
+   * Get active batch collection state from content script
+   */
+  static async getBatchState(): Promise<ExtensionServiceResponse<any>> {
+    return this.sendMessage({ type: 'GET_BATCH_STATE' });
+  }
 }

@@ -21,15 +21,7 @@ async function buildExtension() {
   fs.copyFileSync(manifestPath, distManifestPath);
   console.log('✓ Copied manifest.json');
 
-  // Copy offscreen.html for WebLLM
-  const offscreenPath = path.join(__dirname, '../public/offscreen.html');
-  const distOffscreenPath = path.join(distDir, 'offscreen.html');
-  if (fs.existsSync(offscreenPath)) {
-    fs.copyFileSync(offscreenPath, distOffscreenPath);
-    console.log('✓ Copied offscreen.html');
-  }
-
-  // Background script will be built by vite from src/background.ts (Service Worker with WebLLM)
+  // Background script will be built by vite from src/background.ts
   console.log('✓ background.js (Service Worker) will be built by vite from src/background.ts');
 
   // Copy icons (if they exist)
@@ -48,71 +40,7 @@ async function buildExtension() {
     console.log('✓ Copied icons');
   }
 
-  // Copy AI models (if they exist)
-  const modelsDir = path.join(__dirname, '../public/models');
-  const distModelsDir = path.join(distDir, 'models');
-  if (fs.existsSync(modelsDir)) {
-    if (!fs.existsSync(distModelsDir)) {
-      fs.mkdirSync(distModelsDir, { recursive: true });
-    }
-    
-    // Copy all model directories
-    fs.readdirSync(modelsDir).forEach(modelName => {
-      const modelPath = path.join(modelsDir, modelName);
-      const distModelPath = path.join(distModelsDir, modelName);
-      
-      if (fs.statSync(modelPath).isDirectory()) {
-        if (!fs.existsSync(distModelPath)) {
-          fs.mkdirSync(distModelPath, { recursive: true });
-        }
-        
-        // Copy all files and subdirectories in the model directory recursively
-        function copyRecursive(src, dest) {
-          if (!fs.existsSync(dest)) {
-            fs.mkdirSync(dest, { recursive: true });
-          }
-          
-          fs.readdirSync(src).forEach(item => {
-            const srcPath = path.join(src, item);
-            const destPath = path.join(dest, item);
-            
-            if (fs.statSync(srcPath).isDirectory()) {
-              copyRecursive(srcPath, destPath);
-            } else {
-              fs.copyFileSync(srcPath, destPath);
-            }
-          });
-        }
-        
-        copyRecursive(modelPath, distModelPath);
-        
-        console.log(`✓ Copied model: ${modelName}`);
-      }
-    });
-  } else {
-    console.log('⚠️ No models found - run "npm run download-models" first');
-  }
 
-  // Copy WASM files for Transformers.js
-  const wasmDir = path.join(__dirname, '../public/wasm');
-  const distWasmDir = path.join(distDir, 'wasm');
-  if (fs.existsSync(wasmDir)) {
-    if (!fs.existsSync(distWasmDir)) {
-      fs.mkdirSync(distWasmDir, { recursive: true });
-    }
-    
-    // Copy all WASM files
-    fs.readdirSync(wasmDir).forEach(file => {
-      fs.copyFileSync(
-        path.join(wasmDir, file),
-        path.join(distWasmDir, file)
-      );
-    });
-    
-    console.log('✓ Copied WASM files for Transformers.js');
-  } else {
-    console.log('⚠️ No WASM files found - Transformers.js may not work');
-  }
 
   console.log('✓ Extension build complete!');
   console.log('📁 Extension files are in the dist/ directory');

@@ -1,20 +1,22 @@
 {
   "manifest_version": 3,
   "name": "Transcript Extractor",
-  "version": "4.0.0",
+  "version": "4.2.0",
   "description": "Extract transcripts from educational platforms with smart sequential processing and multiple export formats",
   "permissions": [
     "activeTab",
     "storage",
     "clipboardWrite",
     "scripting",
-    "offscreen"
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "https://*.udemy.com/*",
     "https://*.coursera.org/*",
     "https://*.youtube.com/*",
-    "https://www.youtube.com/*"
+    "https://www.youtube.com/*",
+    "http://*/*",
+    "https://*/*"
   ],
   "action": {
     "default_popup": "index.html",
@@ -23,9 +25,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://*.udemy.com/*",
-        "https://*.coursera.org/*",
-        "https://*.youtube.com/*"
+        "http://*/*",
+        "https://*/*"
       ],
       "js": ["content-script.js"],
       "run_at": "document_idle"
@@ -36,6 +37,6 @@
     "type": "module"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }
