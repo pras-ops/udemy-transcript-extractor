@@ -7,7 +7,6 @@ Welcome to the Transcript Extractor documentation! This folder contains comprehe
 ### **User Guides**
 - **[INSTALLATION.md](INSTALLATION.md)** - Complete installation guide with multiple options
 - **[USAGE.md](USAGE.md)** - Detailed usage instructions and tips
-- **[AI_CHAT_FEATURE.md](AI_CHAT_FEATURE.md)** - Guide for using the local AI Chat feature with transcripts
 - **[COMPLETE_DOCUMENTATION.md](COMPLETE_DOCUMENTATION.md)** - All documentation in one place
 
 ### **Developer Guides**

@@ -1,4 +1,4 @@
-# 📚 Complete Documentation - Transcript Extractor v4.0.0
+# 📚 Complete Documentation - Transcript Extractor v4.2.0
 
 ## Table of Contents
 1. [Overview](#overview)
@@ -20,14 +20,16 @@ A powerful Chrome extension that automatically extracts and collects transcripts
 - **One-Click Extraction** - Extract transcript from any video instantly
 - **Smart Button Logic** - "Extract Transcript" → "Next Lecture & Extract" after success
 - **Multiple Export Formats** - TXT, Markdown, JSON, and RAG formats
+- **Universal Extractor** - Captures video captions or readable article/document text from *any* webpage
 - **Modern UI/UX** - Ultra-curvy design with 48px border radius
 - **Dark Mode Support** - Beautiful dark theme with proper contrast
 - **Sequential Processing** - Streamlined workflow for multiple video extraction
 
 ### Supported Platforms
 - ✅ **Udemy** - Full transcript extraction and batch processing
-- ✅ **Coursera** - Educational course transcripts
-- ✅ **YouTube** - Educational video support
+- ✅ **Coursera** - Course transcripts and reading materials
+- ✅ **YouTube** - Video transcript extraction and playlist batch processing
+- ✅ **Universal Page Extractor** - Captures subtitles from HTML5 video players or readable article/document text from *any* website!
 
 ---
 
@@ -72,7 +74,7 @@ npm run build
 ### For Single Video Extraction
 
 #### Basic Extraction
-1. Go to any Udemy, Coursera, or YouTube video
+1. Go to any Udemy, Coursera, YouTube video, or other webpage / web article
 2. Click the extension icon in your browser toolbar
 3. Click "Extract Transcript" (smart button)
 4. Choose your preferred format:
@@ -100,10 +102,10 @@ npm run build
 - **RAG Format**: AI-optimized format with video title and metadata, perfect for AI tools
 
 ### Tips for Best Results
-1. **Ensure video has transcripts**: Not all videos have transcripts available
-2. **Wait for page load**: Make sure the video page is fully loaded before extracting
-3. **Check permissions**: Ensure the extension has access to the page
-4. **Use supported platforms**: Currently works best with Udemy, Coursera, and YouTube
+1. **Ensure transcript/content exists**: Not all videos have transcripts, and not all web pages have readable articles.
+2. **Wait for page load**: Make sure the target page is fully loaded before extracting.
+3. **Check permissions**: Ensure the extension has access to the page.
+4. **Use supported layouts**: Works seamlessly on Udemy, Coursera, YouTube, and standard web document layouts.
 
 ---
 
@@ -252,39 +254,30 @@ npm run lint
 
 ---
 
-## What's New in v4.0.0
+## What's New in v4.2.0
 
-### Modern Ultra-Curvy Design
+### 🔮 Universal Page Extractor
+- **HTML5 Video Captions**: Scrapes text track overlays/cues from any HTML5 video player.
+- **Article & Document Extraction**: Automatically pulls structured reading tasks, code blocks, headers, and text from standard articles/documentation.
+- **Dynamic Fallbacks**: Safely falls back to body text and paragraphs when structured containers are not present.
+
+### 📚 Multi-Platform Expansion
+- **Coursera Support**: Added complete transcript extraction and reading material capturing.
+- **YouTube Playlists**: Extract structures and compile transcripts from full playlists.
+- **Udemy Support**: Robust batch extraction and course structure scraping.
+
+### 🧹 Clean Architecture & Reliability
+- **Removed Heavy WebLLM Dependencies**: Simplified codebase by removing large local model requirements, resulting in a lightweight unpacked package (~5.5MB).
+- **Vite Bundler**: Optimized entry chunks for backgrounds, popups, and utility views.
+- **Automatic Deployment Checks**: Included a deployment validation script to verify package builds before release.
+- **Secure Permissions**: Restructured manifest permissions to follow Chrome extension best practices.
+
+### 🎨 Modern Ultra-Curvy Design
 - **48px Border Radius** - Ultra-smooth, pill-like appearance
 - **Professional UI/UX** - Clean, modern interface with elegant styling
-- **Smart Button** - Intelligent button that adapts based on extraction status
+- **Smart Button** - Intelligent button that adapts based on extraction status ("Extract Transcript" → "Next Lecture & Extract")
 - **Enhanced Animations** - Smooth micro-interactions and hover effects
 - **Dark Mode Support** - Beautiful dark theme with proper contrast
-
-### Improved User Experience
-- **Smart Button Logic** - "Extract Transcript" → "Next Lecture & Extract" after success
-- **Sequential Processing** - Streamlined workflow for multiple video extraction
-- **Real-time Feedback** - Success animations and progress indicators
-- **Better Error Handling** - Clear error messages and recovery options
-- **Responsive Design** - Optimized for different screen sizes
-
-### Focused on Core Competency
-- **Removed AI Features** - Simplified to focus on what we do best: transcript extraction
-- **Improved Performance** - 70% smaller package size (~15MB vs ~85MB)
-- **Faster Startup** - Extension loads instantly
-- **Better Reliability** - Fewer dependencies means fewer potential issues
-
-### Clean Architecture
-- **Simplified Codebase** - Removed ~2000+ lines of AI-related code
-- **Better Maintainability** - Easier to add new features and fix bugs
-- **Improved Documentation** - Clearer, more focused documentation
-- **Modern Stack** - Latest React 19, TypeScript, and Tailwind CSS
-
-### Privacy-First
-- **Local Processing** - All data stays on your device
-- **No External APIs** - No data sent to third-party services
-- **No Tracking** - No telemetry or usage analytics
-- **Secure** - Following Chrome extension best practices
 
 ---
 

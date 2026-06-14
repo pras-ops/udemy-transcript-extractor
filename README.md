@@ -25,7 +25,7 @@ Transcript Extractor - a one-click solution that extracts transcripts instantly,
 - **One-Click Extraction** - Extract transcript from any video instantly
 - **Batch Processing** - Automatically collect transcripts from multiple videos in a course
 - **Multiple Export Formats** - TXT, Markdown, JSON, and RAG formats
-- **Local AI Chat** - Chat directly with transcripts using WebLLM and local Llama 3.2 1B model
+- **Universal Extractor** - Extract video captions or readable article/document text from *any* website
 - **Smart Progress Tracking** - Real-time progress with section-based counting
 - **Automatic Clipboard** - Transcripts copied to clipboard automatically
 - **Dark Mode UI** - Modern dark theme for better viewing experience
@@ -50,6 +50,7 @@ graph TB
     C --> F[Udemy Extractor]
     C --> G[Coursera Extractor]
     C --> H[YouTube Extractor]
+    C --> N[Universal Extractor]
     
     D --> I[Transcript Viewer]
     D --> J[Export Options]
@@ -112,7 +113,7 @@ npm run build
 ## 📖 Quick Usage
 
 ### **Basic Workflow**
-1. **Visit** any Udemy, Coursera, or YouTube video
+1. **Visit** any Udemy, Coursera, YouTube video, or other webpage / web article
 2. **Click** the extension icon in your browser toolbar
 3. **Click** "Extract Transcript" (smart button)
 4. **Choose** your preferred format (TXT, Markdown, JSON, RAG)
@@ -135,8 +136,9 @@ npm run build
 
 ### **Currently Supported**
 - ✅ **Udemy** - Full transcript extraction and batch processing
-- ✅ **Coursera** - Educational course transcripts
-- ✅ **YouTube** - Educational video support
+- ✅ **Coursera** - Course transcripts and reading materials
+- ✅ **YouTube** - Video transcript extraction and playlist batch processing
+- ✅ **Universal Page Extractor** - Captures subtitles from HTML5 video players or readable article/document text from *any* website!
 
 ## 🔧 Technical Stack
 
@@ -177,7 +179,7 @@ We welcome contributions! Here's how you can help:
 
 ### **Current Status: v4.2.0 Release**
 - ✅ All core features working
-- ✅ Re-integrated local AI Chat feature (Llama 3.2 1B via WebLLM)
+- ✅ Added Universal Extractor to capture transcripts/text from any webpage
 - ✅ Expanded Coursera and YouTube Playlist support
 - ✅ Clean, optimized codebase (only 5.5MB unpacked)
 - ✅ User-tested and refined
@@ -242,7 +244,7 @@ graph TD
 - **Build Command**: `npm run build`
 - **Output**: `dist/` folder with complete extension
 - **Size**: ~15MB (significantly reduced from v3.x)
-- **Zip File**: `transcript-extractor-v4.0.0.zip` (ready for Chrome Web Store)
+- **Zip File**: `transcript-extractor-v4.2.0.zip` (ready for Chrome Web Store)
 
 ### **Quick Deployment**
 1. **Build**: `npm run build`
@@ -305,30 +307,29 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ## 🎉 **What's New in v4.2.0**
 
-### **🤖 Local AI Chat Feature (Re-integrated)**
-- **Interactive Chat**: Chat directly with video transcripts to summarize or extract key points.
-- **WebLLM Engine**: Uses GPU acceleration via WebGPU for fast local inference.
-- **Llama 3.2 1B model**: Lightweight 500MB model for low memory usage and high speed.
-- **Chrome Offscreen Document**: Implements Chrome's Offscreen API to run WebGPU in service-worker architecture.
-- **Cached Models**: Model downloads once and is stored securely in browser cache.
+### **🔮 Universal Page Extractor**
+- **HTML5 Video Captions**: Scrapes text track overlays/cues from any HTML5 video player.
+- **Article & Document Extraction**: Automatically pulls structured reading tasks, code blocks, headers, and text from standard articles/documentation.
+- **Dynamic Fallbacks**: Safely falls back to body text and paragraphs when structured containers are not present.
 
 ### **📚 Multi-Platform Expansion**
 - **Coursera Support**: Added complete transcript extraction and reading material capturing.
 - **YouTube Playlists**: Extract structures and compile transcripts from full playlists.
 - **Udemy Support**: Robust batch extraction and course structure scraping.
 
+### **🧹 Clean Architecture & Reliability**
+- **Removed Heavy WebLLM Dependencies**: Simplified codebase by removing large local model requirements, resulting in a lightweight unpacked package (~5.5MB).
+- **Vite Bundler**: Optimized entry chunks for backgrounds, popups, and utility views.
+- **Automatic Deployment Checks**: Included a deployment validation script to verify package builds before release.
+- **Secure Permissions**: Restructured manifest permissions to follow Chrome extension best practices.
+
 ### **🎨 Modern Ultra-Curvy Design**
 - **48px Border Radius** - Ultra-smooth, pill-like appearance
 - **Professional UI/UX** - Clean, modern interface with elegant styling
-- **Smart Button** - Intelligent button that adapts based on extraction status
+- **Smart Button** - Intelligent button that adapts based on extraction status ("Extract Transcript" → "Next Lecture & Extract")
 - **Enhanced Animations** - Smooth micro-interactions and hover effects
 - **Dark Mode Support** - Beautiful dark theme with proper contrast
 
-### **🧹 Clean Architecture & Reliability**
-- **Vite Bundler**: Optimized entry chunks for backgrounds, popups, and offscreen views.
-- **Automatic Deployment Checks**: Included a deployment validation script.
-- **Secure permissions**: Includes `unlimitedStorage` and CDN host permissions in `manifest.json`.
-
 ---
 
-**Ready to extract and chat with transcripts? Install the extension and start saving time today!**
+**Ready to extract transcripts efficiently? Install the extension and start saving time today!**
