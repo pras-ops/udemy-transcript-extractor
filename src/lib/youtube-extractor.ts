@@ -1,3 +1,4 @@
+import { errorMessage } from './utils';
 // YouTube Extractor for Transcript Extractor Extension - v3.0.0
 // Handles YouTube video transcript extraction
 
@@ -174,7 +175,7 @@ export class YouTubeExtractor {
       if (element) {
         console.log('🎯 Element details:', {
           visible: (element as HTMLElement).offsetParent !== null,
-          disabled: (element as HTMLElement).disabled,
+          disabled: (element as HTMLButtonElement).disabled,
           text: element.textContent?.trim(),
           ariaLabel: element.getAttribute('aria-label')
         });
@@ -195,9 +196,9 @@ export class YouTubeExtractor {
       console.log(`🎯 "${selector}":`, element ? '✅ FOUND' : '❌ NOT FOUND');
       if (element) {
         console.log('🎯 Panel details:', {
-          height: element.offsetHeight,
+          height: (element as HTMLElement).offsetHeight,
           visible: (element as HTMLElement).offsetParent !== null,
-          hasContent: element.textContent?.trim().length > 0
+          hasContent: (element.textContent?.trim().length ?? 0) > 0
         });
       }
     }
@@ -344,7 +345,7 @@ export class YouTubeExtractor {
 
     } catch (error) {
       console.error('Error extracting YouTube transcript:', error);
-      throw new Error(`Failed to extract YouTube transcript: ${error.message}`);
+      throw new Error(`Failed to extract YouTube transcript: ${errorMessage(error)}`);
     }
   }
 
@@ -362,9 +363,9 @@ export class YouTubeExtractor {
         'ytd-transcript-renderer'
       ];
       
-      let existingPanel = null;
+      let existingPanel: HTMLElement | null = null;
       for (const selector of panelSelectors) {
-        existingPanel = document.querySelector(selector);
+        existingPanel = document.querySelector<HTMLElement>(selector);
         if (existingPanel) {
           console.log('🎯 Found existing panel with selector:', selector);
           console.log('🎯 Panel element:', existingPanel);

@@ -1,3 +1,5 @@
+import type { ExportFormat } from './extension-service';
+
 // Chrome Storage Service for Extension State Persistence
 // Maintains state across popup closes/opens until browser restart
 
@@ -12,11 +14,11 @@ export interface ExtensionState {
   availability: { platform: string; hasTranscript: boolean; isCoursePage: boolean } | null;
   extractedTranscript: string;
   extractionStatus: 'idle' | 'extracting' | 'success' | 'error';
-  exportFormat: 'markdown' | 'txt' | 'json' | 'rag';
+  exportFormat: ExportFormat;
   exportTarget: 'clipboard' | 'download';
   includeTimestamps: boolean;
-  clipboardData?: string;
-  clipboardEntries?: number;
+  clipboardData: string;
+  clipboardEntries: number;
 }
 
 export class StorageService {
@@ -56,11 +58,12 @@ export class StorageService {
   static async loadState(): Promise<ExtensionState> {
     try {
       const result = await chrome.storage.local.get(this.STORAGE_KEY);
-      const savedState = result[this.STORAGE_KEY];
+      const savedState = result[this.STORAGE_KEY] as Partial<ExtensionState> | undefined;
       
       if (savedState) {
-        console.log('🎯 State loaded from Chrome storage:', savedState);
-        return savedState;
+        // Merge over defaults so state written by an older version (missing
+        // keys added since) still loads instead of yielding undefined fields.
+        return { ...this.getDefaultState(), ...savedState };
       }
       
       // Return default state if nothing saved
@@ -100,7 +103,9 @@ export class StorageService {
       extractionStatus: 'idle',
       exportFormat: 'markdown',
       exportTarget: 'clipboard',
-      includeTimestamps: true
+      includeTimestamps: true,
+      clipboardData: '',
+      clipboardEntries: 0
     };
   }
 
@@ -156,7 +161,10 @@ export class StorageService {
    */
   static async loadClipboardData(): Promise<{ clipboardData: string; clipboardEntries: number }> {
     try {
-      const result = await chrome.storage.local.get(['clipboardData', 'clipboardEntries']);
+      const result = (await chrome.storage.local.get([
+        'clipboardData',
+        'clipboardEntries',
+      ])) as { clipboardData?: string; clipboardEntries?: number };
       return {
         clipboardData: result.clipboardData || '',
         clipboardEntries: result.clipboardEntries || 0

@@ -20,10 +20,15 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     assetsInlineLimit: 0,
     rollupOptions: {
+      // The content script is NOT built here. It must be a classic script, and
+      // this multi-entry build hoists shared modules into chunks pulled in with
+      // `import`, which a content script cannot execute. It gets its own IIFE
+      // build in vite.content.config.ts.
+      // Only the popup. The extension no longer has a service worker or an
+      // offscreen document: both existed to host an inference runtime, and the
+      // static embedding model does not need one.
       input: {
-        main: path.resolve(__dirname, 'index.html'),
-        'content-script': path.resolve(__dirname, 'src/lib/content-script.ts'),
-        background: path.resolve(__dirname, 'src/background.ts')
+        main: path.resolve(__dirname, 'index.html')
       },
       output: {
         entryFileNames: '[name].js',
@@ -33,7 +38,7 @@ export default defineConfig({
           // Split vendors for better caching
           'vendor': ['react', 'react-dom'],
           // Separate UI components
-          'ui': ['lucide-react', 'framer-motion']
+          'ui': ['lucide-react']
         }
       },
       onwarn(warning, warn) {

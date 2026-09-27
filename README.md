@@ -3,7 +3,7 @@
 A powerful Chrome extension that automatically extracts and collects transcripts from educational video platforms. Built for content creators, students, and professionals who need quick access to educational content.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-blue?logo=google-chrome)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/version-4.2.0-green.svg)](https://github.com/your-username/transcript-extractor)
+[![Version](https://img.shields.io/badge/version-4.2.0-green.svg)](https://github.com/pras-ops/udemy-transcript-extractor)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## 🎯 Why I Built This
@@ -23,10 +23,13 @@ Transcript Extractor - a one-click solution that extracts transcripts instantly,
 
 ### 🚀 **Core Functionality**
 - **One-Click Extraction** - Extract transcript from any video instantly
+- **Works on any video site** - Dedicated support for Udemy, Coursera and YouTube, plus a generic
+  extractor that reads captions from any standard HTML5 player (Panopto, Kaltura, Echo360, Moodle,
+  edX and most self-hosted lecture players)
+- **Seven export formats** - Markdown, plain text, retrieval chunks, SRT, WebVTT, CSV and JSON
+- **Search this lecture** - Ask a question in your own words and jump to the moment it was answered.
+  Runs entirely on your machine, on CPU, with no GPU and no network
 - **Batch Processing** - Automatically collect transcripts from multiple videos in a course
-- **Multiple Export Formats** - TXT, Markdown, JSON, and RAG formats
-- **Universal Extractor** - Extract video captions or readable article/document text from *any* website
-- **Smart Progress Tracking** - Real-time progress with section-based counting
 - **Automatic Clipboard** - Transcripts copied to clipboard automatically
 - **Dark Mode UI** - Modern dark theme for better viewing experience
 
@@ -50,7 +53,6 @@ graph TB
     C --> F[Udemy Extractor]
     C --> G[Coursera Extractor]
     C --> H[YouTube Extractor]
-    C --> N[Universal Extractor]
     
     D --> I[Transcript Viewer]
     D --> J[Export Options]
@@ -96,27 +98,42 @@ graph TB
 ### **Option 3: Build from Source**
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/transcript-extractor.git
+git clone https://github.com/pras-ops/udemy-transcript-extractor.git
 cd transcript-extractor
 
 # Install dependencies
 npm install
 
-# Build the extension
-npm run build
+# Fetch the bundled search model (~23 MB, one time).
+# The weights are a build input and are not committed to the repo.
+npm run fetch:model
+
+# Typecheck, lint and test
+npm run verify
+
+# Build the extension and check it against Chrome Web Store rules
+npm run deploy
 
 # Load the dist folder in Chrome extensions
 ```
+
+| Script | What it does |
+| --- | --- |
+| `npm run fetch:model` | Downloads the search model into `public/models/` |
+| `npm run verify` | Typecheck + lint + tests |
+| `npm run build:extension` | Production build plus manifest, model and WASM assets |
+| `npm run check:store` | Fails the build if anything would be rejected by the store |
+| `npm run deploy` | `build:extension` then `check:store` |
 
 📖 **For detailed installation instructions, see [docs/INSTALLATION.md](docs/INSTALLATION.md)**
 
 ## 📖 Quick Usage
 
 ### **Basic Workflow**
-1. **Visit** any Udemy, Coursera, YouTube video, or other webpage / web article
+1. **Visit** any page with a video that has captions
 2. **Click** the extension icon in your browser toolbar
 3. **Click** "Extract Transcript" (smart button)
-4. **Choose** your preferred format (TXT, Markdown, JSON, RAG)
+4. **Choose** your export format
 5. **Copy** to clipboard or download as file
 
 ### **Smart Button Feature**
@@ -125,20 +142,49 @@ npm run build
 - Perfect for collecting transcripts from entire courses
 
 ### **Export Formats**
-- **TXT** - Clean text for general use
-- **Markdown** - Formatted for documentation  
-- **JSON** - Structured data for developers
-- **RAG** - AI-optimized format for AI tools
+
+| Format | Best for |
+| --- | --- |
+| **Markdown** (`.md`) | Readable notes with clickable timestamps — Obsidian, Notion, ChatGPT, Claude |
+| **Plain text** (`.txt`) | Anywhere |
+| **Retrieval chunks** (`.json`) | Vector stores and NotebookLM — pre-chunked with context headers and timestamps |
+| **SubRip** (`.srt`) | Video editors and players |
+| **WebVTT** (`.vtt`) | HTML5 players, re-upload |
+| **CSV** (`.csv`) | Excel, Google Sheets, Anki, Quizlet |
+| **JSON** (`.json`) | Your own scripts |
 
 📖 **For detailed usage instructions, see [docs/USAGE.md](docs/USAGE.md)**
 
 ## 🎯 Supported Platforms
 
-### **Currently Supported**
+### **Dedicated extractors**
 - ✅ **Udemy** - Full transcript extraction and batch processing
-- ✅ **Coursera** - Course transcripts and reading materials
-- ✅ **YouTube** - Video transcript extraction and playlist batch processing
-- ✅ **Universal Page Extractor** - Captures subtitles from HTML5 video players or readable article/document text from *any* website!
+- ✅ **Coursera** - Educational course transcripts
+- ✅ **YouTube** - Educational video support
+
+### **Everything else**
+A generic extractor reads caption data directly rather than scraping any particular site's markup,
+using the browser's own `TextTrack` API, `<track>` elements, and caption files the player fetches.
+That covers most lecture-capture and LMS players — Panopto, Kaltura, Echo360, Canvas Studio, Moodle,
+edX and self-hosted HTML5 players — with **no extra permissions**: the extension uses `activeTab`,
+so it only ever sees the page you invoke it on.
+
+If a platform serves captions through a protected endpoint, the extension says so explicitly rather
+than failing silently.
+
+## 🔒 Privacy and local AI
+
+Everything runs on your machine. The lecture search feature uses a ~23 MB embedding model that is
+**bundled with the extension** — it is not downloaded, and no transcript, query or page content is
+ever sent anywhere.
+
+Search returns passages from the lecture with timestamps, rather than generating an answer, so it
+cannot invent something that was never said.
+
+> **Note on remotely hosted code.** An earlier version shipped a WebLLM chat feature that fetched a
+> compiled `.wasm` model library from a CDN at runtime. Manifest V3 forbids remotely hosted code and
+> the Chrome Web Store counts WASM as code, so that feature was removed to make the extension
+> publishable. `npm run check:store` enforces this on every build.
 
 ## 🔧 Technical Stack
 
@@ -173,19 +219,18 @@ We welcome contributions! Here's how you can help:
 - **Documentation** - Help improve user guides and documentation
 - **Performance Optimization** - Improve processing speed and efficiency
 
-📖 **For detailed contributing guidelines, see [docs/COMPLETE_DOCUMENTATION.md](docs/COMPLETE_DOCUMENTATION.md)**
+📖 **For architecture and development setup, see [docs/TECHNICAL.md](docs/TECHNICAL.md)**
 
 ## 📊 Project Status
 
-### **Current Status: v4.2.0 Release**
+### **Current Status: v4.2.0**
 - ✅ All core features working
-- ✅ Added Universal Extractor to capture transcripts/text from any webpage
-- ✅ Expanded Coursera and YouTube Playlist support
-- ✅ Clean, optimized codebase (only 5.5MB unpacked)
+- ✅ Clean, focused codebase
 - ✅ User-tested and refined
-- ✅ Comprehensive error handling and deployment checks
+- ✅ Comprehensive error handling
+- ✅ Multi-platform support
 - ✅ Batch collection with progress tracking
-- ✅ Multiple export formats (TXT, Markdown, JSON, RAG)
+- ✅ Multiple export formats
 
 ### **Development Philosophy**
 - **Simplicity Over Complexity** - Simple solutions are more reliable
@@ -305,30 +350,14 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ---
 
-## 🎉 **What's New in v4.2.0**
+## 📝 Changelog
 
-### **🔮 Universal Page Extractor**
-- **HTML5 Video Captions**: Scrapes text track overlays/cues from any HTML5 video player.
-- **Article & Document Extraction**: Automatically pulls structured reading tasks, code blocks, headers, and text from standard articles/documentation.
-- **Dynamic Fallbacks**: Safely falls back to body text and paragraphs when structured containers are not present.
+Release history lives in **[CHANGELOG.md](CHANGELOG.md)**.
 
-### **📚 Multi-Platform Expansion**
-- **Coursera Support**: Added complete transcript extraction and reading material capturing.
-- **YouTube Playlists**: Extract structures and compile transcripts from full playlists.
-- **Udemy Support**: Robust batch extraction and course structure scraping.
-
-### **🧹 Clean Architecture & Reliability**
-- **Removed Heavy WebLLM Dependencies**: Simplified codebase by removing large local model requirements, resulting in a lightweight unpacked package (~5.5MB).
-- **Vite Bundler**: Optimized entry chunks for backgrounds, popups, and utility views.
-- **Automatic Deployment Checks**: Included a deployment validation script to verify package builds before release.
-- **Secure Permissions**: Restructured manifest permissions to follow Chrome extension best practices.
-
-### **🎨 Modern Ultra-Curvy Design**
-- **48px Border Radius** - Ultra-smooth, pill-like appearance
-- **Professional UI/UX** - Clean, modern interface with elegant styling
-- **Smart Button** - Intelligent button that adapts based on extraction status ("Extract Transcript" → "Next Lecture & Extract")
-- **Enhanced Animations** - Smooth micro-interactions and hover effects
-- **Dark Mode Support** - Beautiful dark theme with proper contrast
+The short version of where this is now: v4.2 replaced the browser-based LLM
+with static embeddings, which removed the GPU requirement, the multi-gigabyte
+model download and the whole inference runtime. Search is instant, runs on CPU,
+and works the same on every machine.
 
 ---
 

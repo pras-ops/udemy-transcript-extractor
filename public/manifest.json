@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Transcript Extractor",
   "version": "4.2.0",
-  "description": "Extract transcripts from educational platforms with smart sequential processing and multiple export formats",
+  "description": "Extract lecture transcripts from any video site and export them as notes, subtitles, spreadsheets or retrieval-ready chunks.",
   "permissions": [
     "activeTab",
     "storage",
@@ -13,29 +13,49 @@
   "host_permissions": [
     "https://*.udemy.com/*",
     "https://*.coursera.org/*",
-    "https://*.youtube.com/*",
-    "https://www.youtube.com/*",
-    "http://*/*",
-    "https://*/*"
+    "https://*.youtube.com/*"
   ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
     "default_popup": "index.html",
-    "default_title": "Transcript Extractor"
+    "default_title": "Transcript Extractor",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_scripts": [
     {
       "matches": [
-        "http://*/*",
-        "https://*/*"
+        "https://*.udemy.com/*",
+        "https://*.coursera.org/*",
+        "https://*.youtube.com/*"
       ],
-      "js": ["content-script.js"],
+      "js": [
+        "content-script.js"
+      ],
       "run_at": "document_idle"
     }
   ],
-  "background": {
-    "service_worker": "background.js",
-    "type": "module"
-  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "models/*"
+      ],
+      "matches": [
+        "https://*.udemy.com/*",
+        "https://*.coursera.org/*",
+        "https://*.youtube.com/*"
+      ]
+    }
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   }

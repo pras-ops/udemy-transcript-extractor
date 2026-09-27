@@ -21,9 +21,6 @@ async function buildExtension() {
   fs.copyFileSync(manifestPath, distManifestPath);
   console.log('✓ Copied manifest.json');
 
-  // Background script will be built by vite from src/background.ts
-  console.log('✓ background.js (Service Worker) will be built by vite from src/background.ts');
-
   // Copy icons (if they exist)
   const iconsDir = path.join(__dirname, '../public/icons');
   const distIconsDir = path.join(distDir, 'icons');
@@ -40,7 +37,19 @@ async function buildExtension() {
     console.log('✓ Copied icons');
   }
 
+  // Note: the WebLLM chat model is not bundled. It is fetched from the MLC CDN
+  // on first use and cached by the browser, and only after the user opts in.
 
+  // The semantic-search model IS bundled: it is ~23 MB, and shipping it means
+  // no CDN fetch, no host permission for one, and search that works offline.
+  const modelsDir = path.join(__dirname, '../public/models');
+  if (fs.existsSync(modelsDir)) {
+    fs.cpSync(modelsDir, path.join(distDir, 'models'), { recursive: true });
+    console.log('✓ Copied search model');
+  } else {
+    console.warn('⚠ No search model found - run "npm run fetch:model" first.');
+    console.warn('  The extension will build, but semantic search will not load.');
+  }
 
   console.log('✓ Extension build complete!');
   console.log('📁 Extension files are in the dist/ directory');

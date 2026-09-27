@@ -33,14 +33,24 @@ The extension is ready for deployment by building from source:
 ```
 dist/
 ├── manifest.json          # Extension manifest
-├── background.js          # Background service worker
-├── content-script.js      # Content script for page interaction
-├── main.js              # Main extension bundle
-├── ui.js                # UI components
-├── main.css             # Styling
-├── index.html           # Extension popup
-└── icons/               # Extension icons
+├── content-script.js      # Injected into the page — classic IIFE, not ESM
+├── index.html             # Popup
+├── main.js                # Popup entry
+├── ui.js                  # UI bundle
+├── vendor.js              # Third-party bundle
+├── extension-service.js   # Export formats
+├── main.css               # Styling
+├── models/search/         # Static embedding table + vocabulary
+└── icons/                 # 16, 32, 48, 128px
 ```
+
+There is no `background.js`. The service worker and the offscreen document were
+removed in 4.2.0 along with the model runtime they hosted.
+
+`models/search/` is the bulk of the package. It is the embedding lookup table,
+shipped with the extension so search never makes a network call — which is also
+why the package jumped from ~90 KB to ~29 MB between 4.1 and 4.2. Worth
+mentioning in the submission notes, since it is a large and conspicuous change.
 
 ## Chrome Web Store Requirements
 

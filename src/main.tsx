@@ -1,26 +1,37 @@
 import { StrictMode } from 'react';
-// Force light mode by removing dark class and preventing it from being added
-document.documentElement.classList.remove('dark');
-
-// Override the system preference detection
-const forceLightMode = () => {
-  // Always set dark mode to false regardless of localStorage or system preference
-  document.documentElement.classList.toggle('dark', false // Force to false instead of checking localStorage or system preference
-  );
-};
-
-// Run immediately
-forceLightMode();
-
-// Also run when the DOM is loaded to ensure it applies
-document.addEventListener('DOMContentLoaded', forceLightMode);
-
-// Override system preference changes
-const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-mediaQuery.addEventListener('change', forceLightMode);
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
-createRoot(document.getElementById('root')!).render(<StrictMode>
+
+/**
+ * Apply the saved theme before first paint.
+ *
+ * This previously forced light mode unconditionally and registered a
+ * `prefers-color-scheme` listener that re-forced it, so the popup's own dark
+ * mode toggle was undone whenever the OS theme changed. The stored preference
+ * is the single source of truth; the system preference is only the default for
+ * a user who has never chosen.
+ */
+const THEME_KEY = 'transcript-extractor-theme';
+
+function applyStoredTheme() {
+  let stored: string | null = null;
+  try {
+    stored = localStorage.getItem(THEME_KEY);
+  } catch {
+    // Storage can be unavailable; fall through to the system preference.
+  }
+
+  const prefersDark =
+    stored === null && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+  document.documentElement.classList.toggle('dark', stored === 'dark' || prefersDark);
+}
+
+applyStoredTheme();
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
     <App />
-  </StrictMode>);
+  </StrictMode>,
+);

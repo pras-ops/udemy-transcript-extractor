@@ -1,0 +1,11 @@
+# The repo previously held a mix of LF and CRLF source files, so routine edits
+# on Windows rewrote whole files and buried real changes in line-ending noise.
+# Normalise text to LF in the repository; checkout still respects core.autocrlf.
+* text=auto eol=lf
+
+# Binary assets must never be touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.zip binary
+*.wasm binary

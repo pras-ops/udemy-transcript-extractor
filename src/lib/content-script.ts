@@ -5,11 +5,14 @@
 import { UdemyExtractor } from './udemy-extractor';
 import { YouTubeExtractor } from './youtube-extractor';
 import { CourseraExtractor } from './coursera-extractor';
-import { UniversalExtractor } from './universal-extractor';
-import { SelfHealingSelector } from './utils';
+import {
+  extractGenericTranscript,
+  findPrimaryVideo,
+  getGenericVideoInfo,
+  hasGenericTranscript,
+  isGenericVideoPage,
+} from './generic-extractor';
 
-// Chrome extension types
-declare const chrome: any;
 
 // Fallback: if imports fail, create minimal extractors
 if (typeof UdemyExtractor === 'undefined') {
@@ -31,7 +34,7 @@ declare global {
 
 // Message types for communication with popup
 export interface ContentScriptMessage {
-  type: 'EXTRACT_COURSE_STRUCTURE' | 'EXTRACT_TRANSCRIPT' | 'GET_VIDEO_INFO' | 'CHECK_AVAILABILITY' | 'START_BATCH_COLLECTION' | 'NAVIGATE_TO_NEXT_LECTURE' | 'COLLECT_CURRENT_TRANSCRIPT' | 'EXPORT_BATCH_TRANSCRIPTS' | 'TEST_COURSE_STRUCTURE' | 'GET_BATCH_STATE';
+  type: 'EXTRACT_COURSE_STRUCTURE' | 'EXTRACT_TRANSCRIPT' | 'GET_VIDEO_INFO' | 'CHECK_AVAILABILITY' | 'START_BATCH_COLLECTION' | 'NAVIGATE_TO_NEXT_LECTURE' | 'COLLECT_CURRENT_TRANSCRIPT' | 'EXPORT_BATCH_TRANSCRIPTS' | 'TEST_COURSE_STRUCTURE' | 'PREPARE_CAPTURE' | 'RESUME_PLAYBACK';
   data?: any;
 }
 
@@ -124,6 +127,16 @@ class ContentScript {
           break;
         }
 
+        case 'PREPARE_CAPTURE': {
+          sendResponse({ success: true, data: await this.prepareCapture() });
+          break;
+        }
+
+        case 'RESUME_PLAYBACK': {
+          sendResponse({ success: true, data: this.resumePlayback() });
+          break;
+        }
+
         case 'CHECK_AVAILABILITY': {
           const availability = this.checkAvailability();
           sendResponse({ success: true, data: availability });
@@ -151,11 +164,6 @@ class ContentScript {
         case 'EXPORT_BATCH_TRANSCRIPTS': {
           const exportResult = await this.exportBatchTranscripts(message.data?.format || 'txt');
           sendResponse({ success: true, data: exportResult });
-          break;
-        }
-
-        case 'GET_BATCH_STATE': {
-          sendResponse({ success: true, data: this.batchState });
           break;
         }
 
@@ -239,29 +247,7 @@ class ContentScript {
       return CourseraExtractor.extractCourseStructure();
     }
     
-    // Universal fallback: treat the page as a single lecture/document course
-    const documentInfo = UniversalExtractor.getVideoInfo();
-    return {
-      title: documentInfo.title,
-      instructor: 'Web Author',
-      sections: [{
-        title: 'Document Context',
-        lectures: [{
-          id: 'universal_doc',
-          title: documentInfo.title,
-          url: window.location.href,
-          isCompleted: false,
-          duration: documentInfo.duration
-        }]
-      }],
-      currentLecture: {
-        id: 'universal_doc',
-        title: documentInfo.title,
-        url: window.location.href,
-        isCompleted: false,
-        duration: documentInfo.duration
-      }
-    };
+    throw new Error('Unsupported platform');
   }
 
   private async extractTranscript() {
@@ -312,31 +298,84 @@ class ContentScript {
       }
     }
     
-    // Universal fallback: extract subtitles or article text
-    try {
-      const result = await UniversalExtractor.extract();
-      return result;
-    } catch (error) {
-      console.error('Universal extractor error:', error);
-      throw error;
+    // Not a platform we have a bespoke extractor for. Rather than give up,
+    // go after the caption data directly — this is what makes Panopto,
+    // Kaltura, Echo360, Moodle and self-hosted players work.
+    if (isGenericVideoPage()) {
+      return await extractGenericTranscript();
     }
+
+    throw new Error('No video found on this page.');
+  }
+
+  /**
+   * Pause the lecture, settle, and report where to crop.
+   *
+   * Capturing a playing video catches whatever frame the compositor happened
+   * to be on, which on a screencast is often mid-scroll or mid-transition.
+   * Pausing first is also what removes the step the user was doing by hand:
+   * the extension popup closes the moment you click the page, so pausing
+   * manually meant closing the popup, pausing, and reopening it.
+   *
+   * `wasPlaying` goes back to the caller so playback can be restored after the
+   * capture — taking a screenshot should not decide whether you are watching.
+   *
+   * The rectangle is reported in CSS pixels with the device pixel ratio
+   * alongside, because the captured bitmap is in device pixels and the two
+   * differ on most laptops. `findPrimaryVideo` picks the lecture by playback
+   * state, duration and size rather than by selector, which is what makes this
+   * work on any HTML5 player rather than three named ones.
+   *
+   * Videos inside a cross-origin iframe are not reachable from here; that
+   * would need `all_frames` in the manifest and a per-frame capture path.
+   */
+  private async prepareCapture() {
+    const video = findPrimaryVideo();
+    if (!video) return null;
+
+    const wasPlaying = !video.paused;
+    if (wasPlaying) {
+      video.pause();
+      // One or two compositor frames for the paused image to be what is on
+      // screen. Without this the capture can still catch the moving frame.
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+
+    const rect = video.getBoundingClientRect();
+    return {
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      seconds: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+      devicePixelRatio: window.devicePixelRatio || 1,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      paused: video.paused,
+      wasPlaying,
+    };
+  }
+
+  /** Resume a lecture this extension paused to take a still. */
+  private resumePlayback() {
+    const video = findPrimaryVideo();
+    if (!video) return false;
+    // A rejected play() is not worth surfacing: the frame is already captured,
+    // and the user can press play themselves.
+    void video.play().catch(() => undefined);
+    return true;
   }
 
   private getVideoInfo() {
-    let info: any = {};
     if (UdemyExtractor.isUdemyCoursePage()) {
-      info = UdemyExtractor.getCurrentVideoInfo() || {};
-    } else if (YouTubeExtractor.isYouTubeVideoPage()) {
-      info = YouTubeExtractor.getCurrentVideoInfo() || {};
-    } else if (CourseraExtractor.isCourseraCoursePage()) {
-      info = CourseraExtractor.getCurrentVideoInfo() || {};
-    } else {
-      info = UniversalExtractor.getVideoInfo() || {};
+      return UdemyExtractor.getCurrentVideoInfo();
     }
-    return {
-      ...info,
-      lectureId: this.getCurrentLectureId()
-    };
+    
+    if (YouTubeExtractor.isYouTubeVideoPage()) {
+      return YouTubeExtractor.getCurrentVideoInfo();
+    }
+    
+    if (CourseraExtractor.isCourseraCoursePage()) {
+      return CourseraExtractor.getCurrentVideoInfo();
+    }
+    
+    return getGenericVideoInfo();
   }
 
   private checkAvailability() {
@@ -371,10 +410,18 @@ class ContentScript {
       };
     }
     
+    if (isGenericVideoPage()) {
+      return {
+        platform: 'generic',
+        hasTranscript: hasGenericTranscript(),
+        isCoursePage: true
+      };
+    }
+    
     return {
-      platform: 'universal',
-      hasTranscript: true, // Always allow extracting visible web content/captions
-      isCoursePage: true   // Treat it as a document course page context
+      platform: 'unknown',
+      hasTranscript: false,
+      isCoursePage: false
     };
   }
 
@@ -400,64 +447,43 @@ class ContentScript {
 
   private async navigateToNextLecture(): Promise<boolean> {
     try {
-      // If YouTube playlist
-      if (window.location.hostname.includes('youtube.com')) {
-        const nextButton = SelfHealingSelector.query({
-          primary: ['.ytp-next-button', 'ytd-playlist-panel-renderer .ytp-next-button', '#playlist-items + .ytp-next-button'],
-          fallbackTags: ['button', 'a'],
-          attributes: { 'class': /ytp-next-button/i }
-        });
-
-        if (nextButton) {
-          console.log('🎯 Found YouTube Next button, clicking...');
-          (nextButton as HTMLElement).click();
-          await new Promise(resolve => setTimeout(resolve, 100));
-          await this.waitForLectureChange(5000);
-          return true;
-        }
-      }
-
-      // If Coursera course
-      if (window.location.hostname.includes('coursera.org')) {
-        const btn = SelfHealingSelector.query({
-          primary: [
-            'button[data-testid="next-item-button"]',
-            '[data-testid="next-item-button"]',
-            'button[aria-label="Next Item"]',
-            'a[aria-label="Next Item"]',
-            '.rc-NextItemButton',
-            'button.next-item',
-            'a.next-item',
-            '[class*="NextItem"]'
-          ],
-          fallbackTags: ['button', 'a', 'div'],
-          attributes: { 'aria-label': /next/i },
-          textContent: /next/i
-        });
-
-        if (btn) {
-          console.log('🎯 Found Coursera Next button/link, clicking...');
-          (btn as HTMLElement).click();
-          await new Promise(resolve => setTimeout(resolve, 100));
-          await this.waitForLectureChange(5000);
-          return true;
-        }
-      }
-
       console.log('🎯 Attempting to navigate to next lecture using Udemy\'s Next button...');
       
-      // Find Udemy's built-in "Next" button with Self-Healing rules
-      const nextButton = SelfHealingSelector.query({
-        primary: [
-          '[data-purpose="go-to-next"]',
-          '#go-to-next-item',
-          '.next-and-previous--next--8Avih',
-          '.next-and-previous--button---fNLz.next-and-previous--next--8Avih'
-        ],
-        fallbackTags: ['button', 'a', 'span'],
-        attributes: { 'data-purpose': 'go-to-next', 'aria-label': /next/i },
-        textContent: /next/i
-      });
+      // Find Udemy's built-in "Next" button using multiple approaches
+      let nextButton: Element | null = null;
+      
+      // Approach 1: Try specific selectors
+      const selectors = [
+        '[data-purpose="go-to-next"]',
+        '#go-to-next-item',
+        '.next-and-previous--next--8Avih',
+        '.next-and-previous--button---fNLz.next-and-previous--next--8Avih'
+      ];
+      
+      for (const selector of selectors) {
+        const button = document.querySelector(selector);
+        if (button && (button as HTMLElement).offsetParent !== null) { // visible check
+          nextButton = button;
+          console.log('🎯 Found Next button with selector:', selector);
+          break;
+        }
+      }
+      
+      // Approach 2: If not found, look for buttons with "next" text or aria-label
+      if (!nextButton) {
+        const allButtons = document.querySelectorAll('button, [role="button"], .ud-btn');
+        for (const button of allButtons) {
+          const ariaLabel = button.getAttribute('aria-label')?.toLowerCase() || '';
+          const textContent = button.textContent?.toLowerCase() || '';
+          
+          if ((ariaLabel.includes('next') || textContent.includes('next')) && 
+              (button as HTMLElement).offsetParent !== null) { // visible check
+            nextButton = button;
+            console.log('🎯 Found Next button by text/aria-label:', button);
+            break;
+          }
+        }
+      }
       
       if (!nextButton) {
         console.log('🎯 No Udemy Next button found');
@@ -570,37 +596,12 @@ class ContentScript {
         console.log('🧹 ContentScript: Added delay for batch processing memory management');
       }
       
-      const isUdemy = UdemyExtractor.isUdemyCoursePage();
-      const isYouTube = YouTubeExtractor.isYouTubeVideoPage();
-      const isCoursera = CourseraExtractor.isCourseraCoursePage();
-
       // Quick check if page is ready for collection
-      let isPageReady = false;
-      if (isUdemy) {
-        isPageReady = UdemyExtractor.isPageReadyForCollection();
-      } else if (isYouTube) {
-        const video = document.querySelector('video');
-        isPageReady = !!(video && video.readyState >= 2);
-      } else if (isCoursera) {
-        const video = document.querySelector('video');
-        const reading = document.querySelector('.rc-CML, .rc-ReadingItem');
-        isPageReady = !!((video && video.readyState >= 2) || (reading && reading.textContent && reading.textContent.trim().length > 100));
-      } else {
-        isPageReady = true;
-      }
+      const isPageReady = UdemyExtractor.isPageReadyForCollection();
       console.log('🎯 Page ready for collection:', isPageReady);
       
       // Check if transcript is available first
-      let isAvailable = false;
-      if (isUdemy) {
-        isAvailable = await UdemyExtractor.isTranscriptAvailable();
-      } else if (isYouTube) {
-        isAvailable = YouTubeExtractor.isTranscriptAvailable();
-      } else if (isCoursera) {
-        isAvailable = CourseraExtractor.isTranscriptAvailable();
-      } else {
-        isAvailable = true;
-      }
+      const isAvailable = await UdemyExtractor.isTranscriptAvailable();
       console.log('🎯 Transcript availability check result:', isAvailable);
       
       if (!isAvailable) {
@@ -709,32 +710,9 @@ class ContentScript {
   }
 
   private getCurrentLectureId(): string {
-    const isUdemy = UdemyExtractor.isUdemyCoursePage();
-    const isYouTube = YouTubeExtractor.isYouTubeVideoPage();
-    const isCoursera = CourseraExtractor.isCourseraCoursePage();
-
-    if (isUdemy) {
-      const match = window.location.pathname.match(/\/learn\/lecture\/(\d+)/);
-      return match ? match[1] : 'unknown';
-    }
-    
-    if (isYouTube) {
-      const match = window.location.href.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/);
-      return match ? match[1] : 'unknown';
-    }
-    
-    if (isCoursera) {
-      const url = window.location.href;
-      const lectureMatch = url.match(/\/lecture\/([^/]+)/);
-      const readingMatch = url.match(/\/reading\/([^/]+)/);
-      if (lectureMatch) return lectureMatch[1];
-      if (readingMatch) return readingMatch[1];
-      
-      const info = CourseraExtractor.getCurrentVideoInfo();
-      return info ? info.videoId : 'unknown';
-    }
-    
-    return 'universal_doc';
+    // Extract lecture ID from URL
+    const match = window.location.pathname.match(/\/learn\/lecture\/(\d+)/);
+    return match ? match[1] : 'unknown';
   }
 
   private async exportBatchTranscripts(format: 'markdown' | 'txt' | 'json'): Promise<string> {

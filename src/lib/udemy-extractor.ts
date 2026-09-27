@@ -1,6 +1,8 @@
 // Udemy Transcript Extractor
 // Based on the provided HTML structure from Udemy course pages
 
+import { estimateCueTimings } from './transcript';
+
 export interface UdemySection {
   id: string;
   title: string;
@@ -43,7 +45,7 @@ const SELECTORS = {
 
 export class UdemyExtractor {
   // Simple cleanup tracking for intervals
-  private static cleanupIntervals: NodeJS.Timeout[] = [];
+  private static cleanupIntervals: ReturnType<typeof setInterval>[] = [];
 
   /**
    * Cleanup all intervals to prevent memory leaks
@@ -192,16 +194,12 @@ export class UdemyExtractor {
         const duration = this.extractLectureDuration(linkEl);
         const isCurrent = linkEl.classList.contains('curriculum-item-link--is-current--2mKk4') || 
                          linkEl.classList.contains('is-current');
-        const href = linkEl.getAttribute('href') || '';
-        const match = href.match(/\/lecture\/(\d+)/);
-        const realId = match ? match[1] : `lecture-${index}`;
 
         lectures.push({
-          id: realId,
+          id: `lecture-${index}`,
           title: title,
           duration: duration,
-          isCurrent: isCurrent,
-          url: href.startsWith('http') ? href : window.location.origin + href
+          isCurrent: isCurrent
         });
       });
     } else {
@@ -210,16 +208,12 @@ export class UdemyExtractor {
         const duration = this.extractLectureDuration(lectureEl);
         const isCurrent = lectureEl.classList.contains('curriculum-item-link--is-current--2mKk4') ||
                          lectureEl.classList.contains('is-current');
-        const href = lectureEl.getAttribute('href') || lectureEl.querySelector('a')?.getAttribute('href') || '';
-        const match = href.match(/\/lecture\/(\d+)/);
-        const realId = match ? match[1] : `lecture-${index}`;
 
         lectures.push({
-          id: realId,
+          id: `lecture-${index}`,
           title: title,
           duration: duration,
-          isCurrent: isCurrent,
-          url: href.startsWith('http') ? href : window.location.origin + href
+          isCurrent: isCurrent
         });
       });
     }
@@ -273,12 +267,8 @@ export class UdemyExtractor {
     const currentEl = document.querySelector('.curriculum-item-link--is-current--2mKk4');
     if (!currentEl) return undefined;
 
-    const href = currentEl.getAttribute('href') || currentEl.querySelector('a')?.getAttribute('href') || '';
-    const match = href.match(/\/lecture\/(\d+)/);
-    const realId = match ? match[1] : 'current-lecture';
-
     return {
-      id: realId,
+      id: 'current-lecture',
       title: this.extractLectureTitle(currentEl),
       duration: this.extractLectureDuration(currentEl),
       isCurrent: true
@@ -593,59 +583,131 @@ export class UdemyExtractor {
       
       // Method 1: Try transcript panel first (fastest)
       console.log('🎯 Method 1: Trying transcript panel...');
-      const transcriptPanel = document.querySelector('[data-purpose="transcript-panel"]');
-      
-      if (transcriptPanel) {
-        const entrySelectors = [
-          '[data-purpose="transcript-cue"]',
-          '.transcript--cue-container--Vuwj6',
-          '.transcript-cue',
-          'div[role="button"]'
-        ];
-        
-        let transcriptEntries: NodeListOf<Element> | null = null;
-        for (const selector of entrySelectors) {
-          transcriptEntries = transcriptPanel.querySelectorAll(selector);
-          if (transcriptEntries.length > 0) break;
+
+      // Udemy renames its generated class names between builds, so match on
+      // several shapes rather than one. A single hardcoded selector silently
+      // turns "the panel moved" into "this video has no captions".
+      const panelSelectors = [
+        '[data-purpose="transcript-panel"]',
+        '[data-purpose^="transcript"]',
+        '[class*="transcript--transcript-panel"]',
+        '[class*="transcript-panel"]',
+      ];
+
+      const entrySelectors = [
+        '[data-purpose="transcript-cue"]',
+        '[class*="transcript--cue-container"]',
+        '.transcript--cue-container--Vuwj6',
+        '.transcript-cue',
+        '[class*="cue-container"]',
+      ];
+
+      /**
+       * A candidate is only the transcript panel if it actually contains cues.
+       *
+       * Matching on the element alone let a loose selector pick up unrelated
+       * page furniture — on the Overview tab it matched a container whose text
+       * was the course description, and that got scraped as if it were the
+       * lecture. Requiring cue elements inside makes the match self-validating.
+       */
+      let transcriptPanel: Element | null = null;
+      let transcriptEntries: NodeListOf<Element> | null = null;
+
+      for (const panelSelector of panelSelectors) {
+        for (const candidate of document.querySelectorAll(panelSelector)) {
+          for (const entrySelector of entrySelectors) {
+            const entries = candidate.querySelectorAll(entrySelector);
+            if (entries.length > 0) {
+              transcriptPanel = candidate;
+              transcriptEntries = entries;
+              console.log(
+                `🎯 Transcript panel matched: ${panelSelector} (cues via ${entrySelector})`,
+              );
+              break;
+            }
+          }
+          if (transcriptPanel) break;
         }
-        
+        if (transcriptPanel) break;
+      }
+
+      if (!transcriptPanel) {
+        console.log('🎯 No transcript panel with cue elements found in the DOM.');
+      }
+
+      let panelCueCount = 0;
+
+      if (transcriptPanel) {
+        panelCueCount = transcriptEntries?.length ?? 0;
+        console.log('🎯 Cue elements visible in the panel:', panelCueCount);
+
         if (transcriptEntries && transcriptEntries.length > 0) {
-          console.log('🎯 Found transcript entries:', transcriptEntries.length);
-          
-          transcriptEntries.forEach((entry, index) => {
-            const fullText = entry.textContent?.trim() || '';
-            
-            if (!fullText || fullText === '...' || fullText.length < 3) return;
-            
-            // Extract timestamp and text
-            const timestampMatch = fullText.match(/^(\d{1,2}:\d{2}(?::\d{2})?)\s*(.*)/);
-            let timestamp = '';
-            let text = fullText;
-            
-            if (timestampMatch) {
-              timestamp = timestampMatch[1];
-              text = timestampMatch[2];
-            }
-            
-            if (text && text.length > 3 && /[a-zA-Z]/.test(text)) {
-              transcriptParts.push(`[${timestamp}] ${text}`);
-            }
-          });
+          // The panel is virtualised: only the cues near the current scroll
+          // offset exist in the DOM. A single querySelectorAll therefore
+          // captures ~15 cues out of hundreds, and the result looks like a
+          // successful extraction of a very short lecture.
+          transcriptParts = await this.collectCuesByScrolling(transcriptPanel, entrySelectors);
         }
       }
 
-      // Method 2: Try HTML5 text tracks if panel method failed
-      if (transcriptParts.length === 0) {
-        console.log('🎯 Method 2: Trying HTML5 text tracks...');
+      // Method 2: HTML5 text tracks.
+      //
+      // Run this whenever the panel produced suspiciously little, not only when
+      // it produced nothing — a partial scrape is worse than a fallback,
+      // because it silently truncates the lecture. Text tracks give every cue
+      // at once, so whichever source yields more wins.
+      const panelCount = transcriptParts.length;
+      if (panelCount < 40) {
+        console.log(`🎯 Method 2: panel gave ${panelCount} cues, trying HTML5 text tracks...`);
         const trackLines = await this.extractFromTextTracks();
-        if (trackLines.length > 0) {
+        if (trackLines.length > panelCount) {
+          console.log(`🎯 Text tracks gave ${trackLines.length} cues; using those.`);
           transcriptParts = trackLines;
-          console.log('🎯 Successfully extracted from text tracks!');
         }
       }
-      
+
       if (transcriptParts.length === 0) {
-        throw new Error('No transcript content found - video may not have captions');
+        // Say which of the three very different failures this actually is.
+        // "May not have captions" is wrong — and unactionable — when the real
+        // problem is a closed panel or a video that has not started.
+        if (!transcriptPanel) {
+          throw new Error(
+            'Could not find the transcript panel. Open the lecture (not the Overview tab), click "Transcript" under the player, then extract again.',
+          );
+        }
+        if (panelCueCount === 0) {
+          throw new Error(
+            'The transcript panel is open but empty. Give it a moment to load, or press play briefly, then extract again.',
+          );
+        }
+        throw new Error(
+          `Found ${panelCueCount} transcript rows but could not read text from them. Udemy may have changed its markup — please report this.`,
+        );
+      }
+
+      // Udemy renders transcript text without times and exposes no native text
+      // tracks, so a panel scrape often carries no timings at all. Estimate
+      // them from the video duration rather than shipping a transcript that
+      // cannot be linked back to the lecture at all.
+      const hasAnyTimestamp = transcriptParts.some((line) => /^\[\d{1,2}:\d{2}/.test(line));
+      if (!hasAnyTimestamp) {
+        const videoEl = document.querySelector('video') as HTMLVideoElement | null;
+        const duration = videoEl?.duration ?? 0;
+
+        if (Number.isFinite(duration) && duration > 0) {
+          const estimated = estimateCueTimings(
+            transcriptParts.map((text) => ({ startSeconds: null, text })),
+            duration,
+          );
+          transcriptParts = estimated.map(
+            (cue) => `[${this.formatTime(cue.startSeconds ?? 0)}] ${cue.text}`,
+          );
+          console.log(
+            `🎯 No timings in the DOM; estimated from ${Math.round(duration)}s of video.`,
+          );
+        } else {
+          console.log('🎯 No timings available, and no video duration to estimate from.');
+        }
       }
 
       console.log('🎯 Transcript extraction completed:', transcriptParts.length, 'parts');
@@ -654,6 +716,166 @@ export class UdemyExtractor {
       console.error('Error extracting transcript:', error);
       throw new Error(`Failed to extract transcript: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /**
+   * Read every cue out of a virtualised transcript panel.
+   *
+   * Udemy only keeps the cues near the current scroll offset in the DOM, so a
+   * single query returns a handful of lines regardless of how long the lecture
+   * is. Walking the panel top to bottom and accumulating as cues render is the
+   * only way to see all of them.
+   *
+   * Cues are keyed by timestamp, so the overlap between scroll steps collapses
+   * instead of duplicating, and the scroll position is restored afterwards —
+   * the user did not ask us to move their transcript panel.
+   */
+  private static async collectCuesByScrolling(
+    panel: Element,
+    entrySelectors: readonly string[],
+  ): Promise<string[]> {
+    const scroller = this.findScrollableElement(panel);
+    const originalScrollTop = scroller ? scroller.scrollTop : 0;
+
+    // Cues are kept in the order they appear, not keyed by timestamp.
+    // Udemy does not always put a timestamp in the cue's own text — it is often
+    // a sibling element or absent entirely — so requiring one throws the whole
+    // transcript away. Scrolling top to bottom means DOM order is already the
+    // right order; a seen-set collapses the overlap between scroll steps.
+    const collected: { seconds: number | null; text: string }[] = [];
+    const seen = new Set<string>();
+
+    /** Pull the timestamp from the cue text, a sibling, or a data attribute. */
+    const readTimestamp = (entry: Element, fullText: string): number | null => {
+      const inline = fullText.match(/^(\d{1,2}:\d{2}(?::\d{2})?)\b/);
+      if (inline) return this.parseTimestampToSeconds(inline[1]);
+
+      const stamped = entry.querySelector('[data-purpose*="cue-time"], time, .transcript--underline-cue--9Tzw6');
+      const stampText = stamped?.textContent?.trim();
+      if (stampText) {
+        const match = stampText.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
+        if (match) return this.parseTimestampToSeconds(match[1]);
+      }
+
+      const attr =
+        entry.getAttribute('data-start') ??
+        entry.getAttribute('data-time') ??
+        entry.getAttribute('data-purpose-start');
+      if (attr && Number.isFinite(Number(attr))) return Math.floor(Number(attr));
+
+      return null;
+    };
+
+    const harvest = () => {
+      for (const selector of entrySelectors) {
+        const entries = panel.querySelectorAll(selector);
+        if (entries.length === 0) continue;
+
+        entries.forEach((entry) => {
+          const fullText = entry.textContent?.trim() || '';
+          if (!fullText || fullText === '...' || fullText.length < 3) return;
+
+          const seconds = readTimestamp(entry, fullText);
+          // Strip a leading timestamp from the text when there was one.
+          const text = fullText.replace(/^\d{1,2}:\d{2}(?::\d{2})?\s*/, '').trim();
+          if (!text || text.length < 3 || !/[a-zA-Z]/.test(text)) return;
+
+          const key = text.toLowerCase().replace(/\s+/g, ' ');
+          if (seen.has(key)) return;
+          seen.add(key);
+          collected.push({ seconds, text });
+        });
+        break;
+      }
+    };
+
+    harvest();
+
+    if (scroller && scroller.scrollHeight > scroller.clientHeight) {
+      const step = Math.max(120, Math.floor(scroller.clientHeight * 0.8));
+      // Bounded so a panel that grows as it loads cannot spin forever.
+      const maxSteps = Math.min(400, Math.ceil(scroller.scrollHeight / step) + 10);
+
+      for (let i = 0; i < maxSteps; i++) {
+        const previousTop = scroller.scrollTop;
+        scroller.scrollTop = Math.min(previousTop + step, scroller.scrollHeight);
+        await new Promise((resolve) => setTimeout(resolve, 90));
+        harvest();
+
+        // Reached the bottom, or the panel refused to scroll further.
+        if (scroller.scrollTop <= previousTop) break;
+      }
+
+      scroller.scrollTop = originalScrollTop;
+    }
+
+    const timed = collected.filter((cue) => cue.seconds !== null).length;
+    console.log(
+      `🎯 Collected ${collected.length} cues from the transcript panel (${timed} with timestamps).`,
+    );
+
+    // Only sort when we actually have timings for everything; otherwise DOM
+    // order from the top-to-bottom scroll is the more trustworthy ordering.
+    const ordered =
+      timed === collected.length
+        ? [...collected].sort((a, b) => (a.seconds ?? 0) - (b.seconds ?? 0))
+        : collected;
+
+    return ordered.map((cue) =>
+      cue.seconds === null ? cue.text : `[${this.formatTime(cue.seconds)}] ${cue.text}`,
+    );
+  }
+
+  /**
+   * The element that actually scrolls the transcript.
+   *
+   * Searched in both directions and scored, rather than taking the first
+   * plausible ancestor. Udemy has moved this between the panel, a wrapper above
+   * it and an inner list across builds, and picking the wrong one means the
+   * scroll does nothing — which looks exactly like "this lecture has 14 cues".
+   */
+  private static findScrollableElement(start: Element): HTMLElement | null {
+    const candidates: HTMLElement[] = [];
+
+    // Self and ancestors.
+    let node: Element | null = start;
+    for (let depth = 0; node && depth < 8; depth++) {
+      candidates.push(node as HTMLElement);
+      node = node.parentElement;
+    }
+
+    // Descendants — on some builds the list inside the panel is the scroller.
+    for (const el of start.querySelectorAll<HTMLElement>('*')) {
+      candidates.push(el);
+      // A transcript panel has few enough children that this stays cheap, but
+      // bound it anyway rather than walking a pathological tree.
+      if (candidates.length > 400) break;
+    }
+
+    let best: HTMLElement | null = null;
+    let bestOverflow = 8; // Require a real overflow, not a rounding difference.
+
+    for (const el of candidates) {
+      const overflow = el.scrollHeight - el.clientHeight;
+      if (overflow <= bestOverflow) continue;
+
+      const style = getComputedStyle(el).overflowY;
+      if (style !== 'auto' && style !== 'scroll' && style !== 'overlay') continue;
+
+      best = el;
+      bestOverflow = overflow;
+    }
+
+    return best;
+  }
+
+  /** "MM:SS" or "HH:MM:SS" to seconds; null when it is not a timestamp. */
+  private static parseTimestampToSeconds(value: string): number | null {
+    const parts = value.split(':').map((p) => Number(p));
+    if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return null;
   }
 
   /**
@@ -674,37 +896,46 @@ export class UdemyExtractor {
         return lines;
       }
 
-      // Find best track (captions/subtitles preferred)
-      const preferredTrack = tracks.find(t => t.kind === 'captions') || 
-                          tracks.find(t => t.kind === 'subtitles') || 
-                          tracks[0];
-      
-      console.log(`🎯 Using track: "${preferredTrack.label}"`);
+      // Caption tracks first, but try every one: the first track is often an
+      // empty placeholder, and giving up on it loses the whole transcript.
+      const ordered = [
+        ...tracks.filter((t) => t.kind === 'captions'),
+        ...tracks.filter((t) => t.kind === 'subtitles'),
+        ...tracks.filter((t) => t.kind !== 'captions' && t.kind !== 'subtitles'),
+      ];
 
-      // Set track to showing mode
-      preferredTrack.mode = 'showing';
-      
-      // Wait for cues to load dynamically
-      await this.waitForCuesToLoad(preferredTrack, 2000);
+      let best: string[] = [];
 
-      const cues = preferredTrack.cues ? Array.from(preferredTrack.cues as any) : [];
-      if (cues.length === 0) {
-        console.log('🎯 No cues found in track');
-        return lines;
+      for (const track of ordered) {
+        const originalMode = track.mode;
+        try {
+          // 'hidden' loads the cues without drawing subtitles over the video.
+          // The previous 'showing' turned the user's captions on and left them
+          // on — a visible side effect of pressing Extract.
+          if (track.mode === 'disabled') track.mode = 'hidden';
+          await this.waitForCuesToLoad(track, 2500);
+
+          const cues = track.cues ? Array.from(track.cues as any) : [];
+          if (cues.length === 0) continue;
+
+          const current: string[] = [];
+          cues.forEach((cue: any) => {
+            const start = this.formatTime(cue.startTime || 0);
+            const text = (cue.text || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+            if (text && text.length > 3) current.push(`[${start}] ${text}`);
+          });
+
+          console.log(`🎯 Track "${track.label || track.language}": ${current.length} cues`);
+          if (current.length > best.length) best = current;
+        } finally {
+          // Put the user's caption setting back exactly as we found it.
+          track.mode = originalMode;
+        }
       }
 
-      // Extract text from cues
-      cues.forEach((cue: any) => {
-        const start = this.formatTime(cue.startTime || 0);
-        const text = (cue.text || '').replace(/\s+/g, ' ').trim();
-        
-        if (text && text.length > 3) {
-          lines.push(`[${start}] ${text}`);
-        }
-      });
-
+      lines.push(...best);
       console.log('🎯 Extracted', lines.length, 'lines from text tracks');
-      
+
     } catch (err) {
       console.log('🎯 Text tracks extraction failed:', err);
     }

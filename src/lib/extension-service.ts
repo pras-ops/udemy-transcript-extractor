@@ -1,5 +1,178 @@
 // Extension Service for communicating with content script
 import { UdemyCourse } from './udemy-extractor';
+import { errorMessage } from './utils';
+import {
+  buildChunks,
+  buildDeepLink,
+  cleanCues,
+  formatTimestamp,
+  groupIntoParagraphs,
+  parseTranscript,
+  DEFAULT_CHUNK_OPTIONS,
+  type Cue,
+  type SourceMeta,
+} from './transcript';
+import { toSRT, toWebVTT, type TimedCue } from './caption-formats';
+import { extractDefinitions, buildClozeCards } from './definitions';
+
+/** Adapt pipeline cues (start only) to the timed cues subtitle files need. */
+function toTimedCues(cues: Cue[]): TimedCue[] {
+  return cues
+    .filter((cue) => cue.startSeconds !== null)
+    .map((cue) => ({ startSeconds: cue.startSeconds as number, endSeconds: null, text: cue.text }));
+}
+
+export type ExportFormat =
+  | 'markdown'
+  | 'obsidian'
+  /**
+   * Structured notes: headings, time ranges, paragraphs.
+   *
+   * Produced by the search service, not here, because it needs the embedding
+   * model to find where the topic turns. The case below is a fallback so the
+   * type stays total — the popup intercepts this format before it reaches the
+   * synchronous formatter.
+   */
+  | 'organized'
+  | 'txt'
+  | 'json'
+  | 'rag'
+  | 'srt'
+  | 'vtt'
+  | 'csv'
+  | 'anki';
+
+/**
+ * Extension and MIME type per format.
+ *
+ * Kept as tables because the format id and the file extension genuinely differ
+ * (`markdown` -> `.md`, `rag` -> `.json`); deriving one from the other is what
+ * previously produced `.markdown` and `.rag` files.
+ */
+const FORMAT_EXTENSIONS: Record<ExportFormat, string> = {
+  markdown: 'md',
+  organized: 'md',
+  obsidian: 'md',
+  txt: 'txt',
+  json: 'json',
+  rag: 'json',
+  srt: 'srt',
+  vtt: 'vtt',
+  csv: 'csv',
+  anki: 'csv',
+};
+
+const FORMAT_MIME_TYPES: Record<ExportFormat, string> = {
+  markdown: 'text/markdown',
+  organized: 'text/markdown',
+  obsidian: 'text/markdown',
+  txt: 'text/plain',
+  json: 'application/json',
+  rag: 'application/json',
+  srt: 'application/x-subrip',
+  vtt: 'text/vtt',
+  csv: 'text/csv',
+  anki: 'text/csv',
+};
+
+/** RFC 4180 specifies CRLF between records, and Excel depends on it. */
+const CRLF = '\r\n';
+
+// A field needs quoting if it contains a comma, a quote, or a line break.
+const CSV_NEEDS_QUOTING = new RegExp('[",\\r\\n]');
+
+/**
+ * Quote a CSV field per RFC 4180.
+ *
+ * Transcript text routinely contains commas and quotes, and lecture titles
+ * contain both — unquoted output would corrupt the file on import.
+ */
+function csvField(value: string | number | null): string {
+  if (value === null) return '';
+  const text = String(value);
+  return CSV_NEEDS_QUOTING.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/**
+ * Human-readable capture time for the top of an export.
+ *
+ * A transcript is a snapshot: courses get re-recorded and captions get
+ * corrected, so a file with no date gives no way to tell how stale it is.
+ * Local time rather than ISO, because this line is for a person; the machine
+ * readable ISO form is carried separately in the JSON formats.
+ */
+function formatSavedAt(date = new Date()): string {
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* YAML front matter                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Local `YYYY-MM-DDTHH:mm`, which Obsidian parses as a datetime property.
+ *
+ * Deliberately not `toISOString()`: that is UTC, and a note saying a lecture
+ * was saved at 03:00 when it was mid-afternoon reads as a bug to the only
+ * person who will ever look at it.
+ */
+function savedProperty(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
+/**
+ * Quote a value as a YAML double-quoted scalar.
+ *
+ * Always quoting is the safe choice here: lecture titles routinely contain
+ * colons ("Part 2: Recursion"), leading digits, and `#`, each of which changes
+ * the meaning of an unquoted scalar or breaks the parse outright.
+ */
+function yamlString(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/** Obsidian tags cannot contain spaces; anything unusable is dropped. */
+function yamlTags(values: (string | undefined)[]): string[] {
+  const tags = values
+    .filter((v): v is string => typeof v === 'string' && v.length > 0)
+    .map((v) => v.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9/_-]/g, ''))
+    .filter((v) => v.length > 0);
+  return [...new Set(tags)];
+}
+
+/** Assemble a front-matter block from fields that have a value. */
+function frontMatter(fields: [string, string | null][], tags: string[]): string {
+  const lines = fields
+    .filter((entry): entry is [string, string] => entry[1] !== null)
+    .map(([key, value]) => `${key}: ${value}`);
+
+  if (tags.length > 0) lines.push('tags:', ...tags.map((t) => `  - ${t}`));
+
+  return ['---', ...lines, '---'].join('\n');
+}
+
+/**
+ * GitHub/Obsidian heading anchor, so an in-document contents list actually
+ * jumps: "## 1. Intro" is reachable at "#1-intro".
+ */
+function headingSlug(heading: string): string {
+  return heading
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+}
+
 
 export interface ExtensionServiceResponse<T = any> {
   success: boolean;
@@ -8,16 +181,6 @@ export interface ExtensionServiceResponse<T = any> {
 }
 
 export class ExtensionService {
-  /**
-   * Simple text sanitization to prevent XSS
-   */
-  private static sanitizeText(text: string): string {
-    return text
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove scripts
-      .replace(/javascript:/gi, '') // Remove javascript: links
-      .trim();
-  }
-
   /**
    * Send message to content script and get response
    */
@@ -41,7 +204,7 @@ export class ExtensionService {
         return response;
       } catch (connectionError) {
         // If connection fails, try to inject content script and retry
-        if (connectionError.message?.includes('Receiving end does not exist')) {
+        if (errorMessage(connectionError).includes('Receiving end does not exist')) {
           console.log('🎯 Content script not found, attempting to inject...');
           
           try {
@@ -88,8 +251,24 @@ export class ExtensionService {
       console.error('Error sending message to content script:', error);
       return {
         success: false,
-        error: error.message || 'Extension communication failed'
+        error: errorMessage(error, 'Extension communication failed')
       };
+    }
+  }
+
+  /**
+   * URL of the active tab.
+   *
+   * Needed to build per-chunk deep links back into the video. Returns null if
+   * the URL is not visible to us (no host permission for that origin).
+   */
+  static async getCurrentTabUrl(): Promise<string | null> {
+    try {
+      if (typeof chrome === 'undefined' || !chrome.tabs) return null;
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      return tab?.url ?? null;
+    } catch {
+      return null;
     }
   }
 
@@ -147,246 +326,603 @@ export class ExtensionService {
   }
 
   /**
-   * Download file with given content
+   * Download file with given content.
+   *
+   * The object URL is revoked on a later tick rather than immediately after
+   * `click()`: revoking synchronously can invalidate the blob before the
+   * browser has started reading it, which cancels the download — and it fails
+   * silently, so the user just sees nothing happen.
    */
-  static downloadFile(content: string, filename: string, mimeType: string): void {
-    const blob = new Blob([content], { type: mimeType });
+  /**
+   * Save binary content — an archive of a transcript plus its screenshots.
+   *
+   * Separate from `downloadFile` because a `Blob` built from a string applies
+   * UTF-8 encoding, which corrupts every byte of a ZIP above 0x7F.
+   */
+  static downloadBytes(bytes: Uint8Array, filename: string, mimeType: string): void {
+    const blob = new Blob([bytes as BlobPart], { type: mimeType });
     const url = URL.createObjectURL(blob);
-    
+
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    
-    URL.revokeObjectURL(url);
+
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
+  static downloadFile(content: string, filename: string, mimeType: string): void {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
   /**
-   * Format transcript for different export types
+   * Format a transcript for export.
+   *
+   * All formats run through the tested pipeline in `./transcript`, so cleanup,
+   * chunking and timestamp handling behave identically across them.
    */
-  static formatTranscript(transcript: string, format: 'markdown' | 'txt' | 'json' | 'rag', includeTimestamps: boolean = true, videoTitle?: string): string {
-    // Sanitize input first
-    const cleanTranscript = this.sanitizeText(transcript);
-    
+  static formatTranscript(
+    transcript: string,
+    format: ExportFormat,
+    includeTimestamps: boolean = true,
+    videoTitle?: string,
+    meta: SourceMeta = {},
+  ): string {
+    const source: SourceMeta = { ...meta, title: meta.title ?? videoTitle };
+    const cues = cleanCues(parseTranscript(transcript));
+
     switch (format) {
+      case 'organized':
       case 'markdown':
-        return this.formatAsMarkdown(cleanTranscript, includeTimestamps);
+        return this.formatAsMarkdown(cues, includeTimestamps, source);
+      case 'obsidian':
+        return this.formatAsObsidian(cues, includeTimestamps, source);
       case 'json':
-        return this.formatAsJSON(cleanTranscript, includeTimestamps);
+        return this.formatAsJSON(cues, includeTimestamps, source);
       case 'rag':
-        return this.formatAsRAG(cleanTranscript, includeTimestamps, videoTitle);
+        return this.formatAsRAG(transcript, source);
+      case 'srt':
+        return toSRT(toTimedCues(cues));
+      case 'vtt':
+        return toWebVTT(toTimedCues(cues));
+      case 'csv':
+        return this.formatAsCSV(cues, source);
+      case 'anki':
+        return this.formatAsAnki(cues, source);
       case 'txt':
       default:
-        return this.formatAsText(cleanTranscript, includeTimestamps);
+        return this.formatAsText(cues, includeTimestamps, source);
     }
-  }
-
-  private static formatAsMarkdown(transcript: string, includeTimestamps: boolean): string {
-    const lines = transcript.split('\n\n');
-    const formattedLines = lines.map(line => {
-      if (includeTimestamps) {
-        return `- ${line}`;
-      } else {
-        // Remove timestamp from line
-        const textOnly = line.replace(/^\[[^\]]+\]\s*/, '');
-        return `- ${textOnly}`;
-      }
-    });
-    
-    return `# Transcript\n\n${formattedLines.join('\n')}`;
-  }
-
-  private static formatAsJSON(transcript: string, includeTimestamps: boolean): string {
-    const lines = transcript.split('\n\n');
-    const entries = lines.map(line => {
-      if (includeTimestamps) {
-        const match = line.match(/^\[([^\]]+)\]\s*(.+)$/);
-        if (match) {
-          return {
-            timestamp: match[1],
-            text: match[2]
-          };
-        }
-      }
-      return {
-        text: line.replace(/^\[[^\]]+\]\s*/, '')
-      };
-    });
-    
-    return JSON.stringify({ entries }, null, 2);
-  }
-
-  private static formatAsText(transcript: string, includeTimestamps: boolean): string {
-    if (includeTimestamps) {
-      return transcript;
-    } else {
-      // Remove timestamps
-      return transcript.replace(/^\[[^\]]+\]\s*/gm, '');
-    }
-  }
-
-  private static formatAsRAG(transcript: string, includeTimestamps: boolean, videoTitle?: string): string {
-    const lines = transcript.split('\n\n');
-    
-    // Clean and prepare transcript lines
-    const cleanLines: string[] = [];
-    
-    lines.forEach((line) => {
-      let text = line;
-      let timestamp = '';
-      
-      if (includeTimestamps) {
-        // Handle timestamp formats
-        const timestampMatch = line.match(/^\[([^\]]*)\]\s*(.+)$/);
-        if (timestampMatch) {
-          const bracketContent = timestampMatch[1];
-          text = timestampMatch[2];
-          
-          // Check if bracket content looks like a timestamp
-          if (bracketContent && /^\d{1,2}:\d{2}(:\d{2})?$/.test(bracketContent)) {
-            timestamp = bracketContent;
-          } else {
-            // Other content in brackets - treat as part of text
-            text = line;
-            timestamp = '';
-          }
-        } else {
-          text = line;
-          timestamp = '';
-        }
-      } else {
-        // Remove any timestamp-like content from line
-        text = line.replace(/^\[[^\]]*\]\s*/, '');
-      }
-      
-      // Clean text (remove artifacts, extra spaces)
-      text = text.trim().replace(/\s+/g, ' ');
-      
-      // Skip empty or very short lines, but keep meaningful content
-      if (text && text.length >= 3 && /[a-zA-Z]/.test(text)) {
-        cleanLines.push(text);
-      }
-    });
-    
-    // Smart chunking: merge lines until we reach target word count (50-60 words)
-    const chunks = this.createSmartChunks(cleanLines, 55); // Target 55 words per chunk
-    
-    // Create RAG format with optimized chunks
-    const ragChunks = chunks.map((chunk, index) => ({
-      id: `chunk_${index + 1}`,
-      content: chunk,
-      metadata: {
-        chunk_index: index + 1,
-        source: 'video_transcript',
-        type: 'educational_content',
-        video_title: videoTitle || 'Unknown Video',
-        word_count: chunk.split(/\s+/).length
-      }
-    }));
-    
-    return JSON.stringify({
-      document_type: 'video_transcript',
-      total_chunks: ragChunks.length,
-      chunks: ragChunks,
-      metadata: {
-        extraction_date: new Date().toISOString(),
-        format_version: '2.2',
-        rag_optimized: true,
-        chunking_strategy: 'smart_word_based',
-        target_words_per_chunk: 55,
-        total_words: cleanLines.join(' ').split(/\s+/).length,
-        video_title: videoTitle || 'Unknown Video',
-        video_info: {
-          title: videoTitle || 'Unknown Video',
-          platform: 'udemy',
-          content_type: 'educational_video'
-        }
-      }
-    }, null, 2);
   }
 
   /**
-   * Create smart chunks based on word count, not line count
-   * Merges small transcript segments into coherent 50-60 word chunks
+   * Export a whole course rather than one lecture.
+   *
+   * Timestamps restart at zero in every video, so lectures cannot simply be
+   * concatenated — the output would contain several `00:00` entries with
+   * nothing to say which lecture each belonged to. Every format below keeps the
+   * lecture boundary explicit.
+   *
+   * Subtitle formats are the exception: an `.srt` describes one video's
+   * timeline, and merging several would produce a file whose timings are wrong
+   * everywhere after the first. Those export the current lecture alone.
    */
-  private static createSmartChunks(lines: string[], targetWords: number): string[] {
-    const chunks: string[] = [];
-    let currentChunk: string[] = [];
-    let currentWordCount = 0;
-    
-    for (const line of lines) {
-      const words = line.split(/\s+/);
-      const lineWordCount = words.length;
-      
-      // If adding this line would exceed target, finalize current chunk
-      if (currentWordCount + lineWordCount > targetWords && currentChunk.length > 0) {
-        chunks.push(currentChunk.join(' '));
-        currentChunk = [line];
-        currentWordCount = lineWordCount;
-      } else {
-        // Add line to current chunk
-        currentChunk.push(line);
-        currentWordCount += lineWordCount;
+  static formatCollection(
+    lectures: { title: string; url?: string; transcript: string }[],
+    format: ExportFormat,
+    includeTimestamps: boolean = true,
+    meta: SourceMeta = {},
+  ): string {
+    if (lectures.length === 0) return this.formatTranscript('', format, includeTimestamps, meta.title, meta);
+    if (lectures.length === 1) {
+      const only = lectures[0];
+      return this.formatTranscript(only.transcript, format, includeTimestamps, only.title, {
+        ...meta,
+        title: only.title,
+        url: only.url,
+      });
+    }
+
+    const perLectureMeta = (lecture: { title: string; url?: string }): SourceMeta => ({
+      ...meta,
+      title: lecture.title,
+      url: lecture.url,
+      courseTitle: meta.courseTitle,
+    });
+
+    switch (format) {
+      case 'srt':
+      case 'vtt': {
+        // One video, one timeline.
+        const current = lectures[lectures.length - 1];
+        return this.formatTranscript(
+          current.transcript,
+          format,
+          includeTimestamps,
+          current.title,
+          perLectureMeta(current),
+        );
+      }
+
+      case 'json': {
+        return JSON.stringify(
+          {
+            course: meta.courseTitle ?? meta.title ?? null,
+            savedAt: formatSavedAt(),
+            extractedAt: new Date().toISOString(),
+            lectureCount: lectures.length,
+            lectures: lectures.map((lecture, i) => ({
+              order: i + 1,
+              title: lecture.title,
+              url: lecture.url ?? null,
+              cues: cleanCues(parseTranscript(lecture.transcript)).map((cue) => ({
+                ...(includeTimestamps && cue.startSeconds !== null
+                  ? { start: cue.startSeconds, timestamp: formatTimestamp(cue.startSeconds) }
+                  : {}),
+                text: cue.text,
+              })),
+            })),
+          },
+          null,
+          2,
+        );
+      }
+
+      case 'rag': {
+        // Chunks carry their lecture, so a retrieved passage can say which
+        // lecture it came from — the whole point of a course-level export.
+        const chunks = lectures.flatMap((lecture, i) =>
+          buildChunks(lecture.transcript, perLectureMeta(lecture)).map((chunk) => ({
+            id: `l${i + 1}_${chunk.id}`,
+            content: chunk.content,
+            body: chunk.body,
+            metadata: {
+              lecture_order: i + 1,
+              lecture_title: lecture.title,
+              lecture_url: lecture.url ?? null,
+              chunk_index: chunk.chunkIndex,
+              start_seconds: chunk.startSeconds,
+              end_seconds: chunk.endSeconds,
+              time_range: chunk.timeRange,
+              url: chunk.url,
+              word_count: chunk.wordCount,
+              estimated_tokens: chunk.estimatedTokens,
+            },
+          })),
+        );
+
+        return JSON.stringify(
+          {
+            schema_version: '3.0',
+            document: {
+              course: meta.courseTitle ?? meta.title ?? null,
+              platform: meta.platform ?? 'unknown',
+              lecture_count: lectures.length,
+              extracted_at: new Date().toISOString(),
+              saved_at: formatSavedAt(),
+            },
+            chunking: {
+              strategy: 'fixed-size-with-overlap',
+              target_tokens: DEFAULT_CHUNK_OPTIONS.targetTokens,
+              max_tokens: DEFAULT_CHUNK_OPTIONS.maxTokens,
+              overlap_tokens: DEFAULT_CHUNK_OPTIONS.overlapTokens,
+              contextual_headers: true,
+              scope: 'course',
+            },
+            stats: {
+              chunk_count: chunks.length,
+              estimated_tokens: chunks.reduce((sum, c) => sum + c.metadata.estimated_tokens, 0),
+            },
+            chunks,
+          },
+          null,
+          2,
+        );
+      }
+
+      case 'csv':
+      case 'anki': {
+        // Prepend a lecture column, then the per-lecture rows without their
+        // own header line.
+        const [firstHeader] = this.formatTranscript(
+          lectures[0].transcript,
+          format,
+          includeTimestamps,
+          lectures[0].title,
+          perLectureMeta(lectures[0]),
+        ).split(CRLF);
+
+        const rows = lectures.flatMap((lecture) => {
+          const body = this.formatTranscript(
+            lecture.transcript,
+            format,
+            includeTimestamps,
+            lecture.title,
+            perLectureMeta(lecture),
+          )
+            .split(CRLF)
+            .slice(1)
+            .filter((line) => line.trim().length > 0);
+          return body.map((line) => `${csvField(lecture.title)},${line}`);
+        });
+
+        return [`lecture,${firstHeader}`, ...rows].join(CRLF) + CRLF;
+      }
+
+      case 'markdown': {
+        const head = [
+          `# ${meta.courseTitle ?? meta.title ?? 'Course transcript'}`,
+          [
+            `**Lectures:** ${lectures.length}`,
+            meta.instructor ? `**Instructor:** ${meta.instructor}` : null,
+            `**Saved:** ${formatSavedAt()}`,
+          ]
+            .filter((line): line is string => line !== null)
+            .join('\n'),
+        ];
+
+        const body = lectures.flatMap((lecture, i) => {
+          const section = this.formatTranscript(
+            lecture.transcript,
+            'markdown',
+            includeTimestamps,
+            lecture.title,
+            perLectureMeta(lecture),
+          )
+            // Drop the per-lecture document header; it becomes a section here.
+            .split('\n\n')
+            .slice(2)
+            .join('\n\n')
+            .trim();
+
+          return [`## ${i + 1}. ${lecture.title}`, section];
+        });
+
+        return [...head, ...body].join('\n\n').trim() + '\n';
+      }
+
+      case 'obsidian': {
+        const courseTitle = meta.courseTitle ?? meta.title ?? 'Course transcript';
+
+        const head = frontMatter(
+          [
+            ['title', yamlString(courseTitle)],
+            ['instructor', meta.instructor ? yamlString(meta.instructor) : null],
+            ['platform', meta.platform ? yamlString(meta.platform) : null],
+            ['lectures', String(lectures.length)],
+            ['saved', savedProperty()],
+          ],
+          yamlTags(['transcript', 'course', meta.platform, courseTitle]),
+        );
+
+        // A course export runs to tens of thousands of words, so it opens with
+        // a contents list. The links are in-document anchors rather than
+        // wiki-links: this is one file, and `[[...]]` would point at notes that
+        // do not exist in the reader's vault.
+        const sectionHeadings = lectures.map((lecture, i) => `${i + 1}. ${lecture.title}`);
+        const contents = [
+          '## Contents',
+          sectionHeadings
+            .map((heading, i) => `${i + 1}. [${lectures[i].title}](#${headingSlug(heading)})`)
+            .join('\n'),
+        ];
+
+        const body = lectures.flatMap((lecture, i) => {
+          const section = this.formatTranscript(
+            lecture.transcript,
+            'markdown',
+            includeTimestamps,
+            lecture.title,
+            perLectureMeta(lecture),
+          )
+            // Drop the per-lecture document header; it becomes a section here.
+            .split('\n\n')
+            .slice(2)
+            .join('\n\n')
+            .trim();
+
+          return [`## ${sectionHeadings[i]}`, section];
+        });
+
+        return [head, `# ${courseTitle}`, ...contents, ...body].join('\n\n').trim() + '\n';
+      }
+
+      case 'txt':
+      default: {
+        const head = [
+          meta.courseTitle ?? meta.title ?? 'Course transcript',
+          `Lectures: ${lectures.length}`,
+          `Saved: ${formatSavedAt()}`,
+        ].join('\n');
+
+        const body = lectures.map((lecture, i) => {
+          const section = this.formatTranscript(
+            lecture.transcript,
+            'txt',
+            includeTimestamps,
+            lecture.title,
+            perLectureMeta(lecture),
+          )
+            .split('\n\n')
+            .slice(1)
+            .join('\n\n')
+            .trim();
+
+          return `${'='.repeat(48)}\n${i + 1}. ${lecture.title}\n${'='.repeat(48)}\n\n${section}`;
+        });
+
+        return `${head}\n\n${body.join('\n\n')}\n`;
       }
     }
-    
-    // Add final chunk if it has content
-    if (currentChunk.length > 0) {
-      chunks.push(currentChunk.join(' '));
-    }
-    
-    // Post-process: merge very small chunks with previous ones
-    const finalChunks: string[] = [];
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const wordCount = chunk.split(/\s+/).length;
-      
-      // If chunk is too small (less than 20 words) and not the last chunk
-      if (wordCount < 20 && i < chunks.length - 1) {
-        // Merge with next chunk
-        if (i + 1 < chunks.length) {
-          finalChunks.push(chunk + ' ' + chunks[i + 1]);
-          i++; // Skip next chunk since we merged it
-        } else {
-          finalChunks.push(chunk);
-        }
-      } else {
-        finalChunks.push(chunk);
-      }
-    }
-    
-    return finalChunks;
+  }
+
+  private static formatAsMarkdown(
+    cues: Cue[],
+    includeTimestamps: boolean,
+    meta: SourceMeta,
+  ): string {
+    const title = meta.title || 'Transcript';
+
+    // Metadata lines belong on consecutive lines, not as separate blocks. They
+    // were previously joined with the body's blank-line separator, which left
+    // three empty lines between the heading and the first field.
+    const fields: string[] = [];
+    if (meta.courseTitle && meta.courseTitle !== meta.title) fields.push(`**Course:** ${meta.courseTitle}`);
+    if (meta.instructor) fields.push(`**Instructor:** ${meta.instructor}`);
+    if (meta.url) fields.push(`**Source:** ${meta.url}`);
+    fields.push(`**Saved:** ${formatSavedAt()}`);
+
+    const head: string[] = [`# ${title}`, fields.join('\n')];
+
+    // Paragraphs rather than one bullet per caption line: caption cues are
+    // ~2 seconds of speech, so bulleting them produces an unreadable wall of
+    // fragments. Grouping restores sentence flow for human reading.
+    //
+    // Timestamps are plain text, not links. A document is read and pasted
+    // around — into notes apps, into a model's context — and a wrapped URL on
+    // every paragraph is noise in all of those places. The source URL is in the
+    // header once, which is enough to reconstruct any link.
+    const paragraphs = groupIntoParagraphs(cues);
+    const body = paragraphs.map((p) => {
+      if (!includeTimestamps || p.startSeconds === null) return p.text;
+      return `**[${formatTimestamp(p.startSeconds)}]** ${p.text}`;
+    });
+
+    return [...head, ...body].join('\n\n').trim() + '\n';
   }
 
   /**
-   * Generate filename for download
+   * Markdown with YAML front matter, for a notes vault.
+   *
+   * The difference from `markdown` is entirely in the header. Obsidian, Logseq
+   * and most static-site generators read front matter as structured
+   * properties, so the course, instructor and save time become fields that can
+   * be filtered and sorted rather than prose the reader has to scan for.
+   *
+   * `markdown` keeps its plain human-readable header, because the same file
+   * often gets pasted straight into a chat window where a YAML block is just
+   * noise in the context.
+   */
+  private static formatAsObsidian(
+    cues: Cue[],
+    includeTimestamps: boolean,
+    meta: SourceMeta,
+  ): string {
+    const title = meta.title || 'Transcript';
+
+    const head = frontMatter(
+      [
+        ['title', yamlString(title)],
+        ['course', meta.courseTitle ? yamlString(meta.courseTitle) : null],
+        ['instructor', meta.instructor ? yamlString(meta.instructor) : null],
+        ['source', meta.url ? yamlString(meta.url) : null],
+        ['platform', meta.platform ? yamlString(meta.platform) : null],
+        ['saved', savedProperty()],
+      ],
+      yamlTags(['transcript', meta.platform, meta.courseTitle]),
+    );
+
+    const body = groupIntoParagraphs(cues).map((p) => {
+      if (!includeTimestamps || p.startSeconds === null) return p.text;
+      return `**[${formatTimestamp(p.startSeconds)}]** ${p.text}`;
+    });
+
+    return [head, `# ${title}`, ...body].join('\n\n').trim() + '\n';
+  }
+
+  private static formatAsJSON(cues: Cue[], includeTimestamps: boolean, meta: SourceMeta): string {
+    return JSON.stringify(
+      {
+        title: meta.title ?? null,
+        course: meta.courseTitle ?? null,
+        instructor: meta.instructor ?? null,
+        platform: meta.platform ?? 'unknown',
+        url: meta.url ?? null,
+        extractedAt: new Date().toISOString(),
+        savedAt: formatSavedAt(),
+        cueCount: cues.length,
+        cues: cues.map((c) => ({
+          ...(includeTimestamps && c.startSeconds !== null
+            ? { start: c.startSeconds, timestamp: formatTimestamp(c.startSeconds) }
+            : {}),
+          text: c.text,
+        })),
+      },
+      null,
+      2,
+    );
+  }
+
+  private static formatAsText(
+    cues: Cue[],
+    includeTimestamps: boolean,
+    meta: SourceMeta = {},
+  ): string {
+    // A dated header, so a saved transcript can be told apart from a newer one.
+    const header =
+      [meta.title || 'Transcript', meta.url ? `Source: ${meta.url}` : null, `Saved: ${formatSavedAt()}`]
+        .filter((line): line is string => line !== null)
+        .join('\n') + '\n\n';
+
+    if (!includeTimestamps) {
+      return header + groupIntoParagraphs(cues).map((p) => p.text).join('\n\n') + '\n';
+    }
+
+    return (
+      header +
+      cues
+        .map((c) =>
+          c.startSeconds === null ? c.text : `[${formatTimestamp(c.startSeconds)}] ${c.text}`,
+        )
+        .join('\n') + '\n'
+    );
+  }
+
+  /**
+   * Retrieval-ready chunks for a vector store.
+   *
+   * Each chunk carries a situating header inside `content` (the text meant to
+   * be embedded), the time range it covers, and a deep link back into the
+   * video — so an answer built from a chunk can cite the moment it came from.
+   */
+  private static formatAsRAG(transcript: string, meta: SourceMeta): string {
+    const chunks = buildChunks(transcript, meta);
+    const totalTokens = chunks.reduce((sum, c) => sum + c.estimatedTokens, 0);
+
+    return JSON.stringify(
+      {
+        schema_version: '3.0',
+        document: {
+          title: meta.title ?? null,
+          course: meta.courseTitle ?? null,
+          instructor: meta.instructor ?? null,
+          platform: meta.platform ?? 'unknown',
+          url: meta.url ?? null,
+          extracted_at: new Date().toISOString(),
+          saved_at: formatSavedAt(),
+        },
+        chunking: {
+          strategy: 'fixed-size-with-overlap',
+          target_tokens: DEFAULT_CHUNK_OPTIONS.targetTokens,
+          max_tokens: DEFAULT_CHUNK_OPTIONS.maxTokens,
+          overlap_tokens: DEFAULT_CHUNK_OPTIONS.overlapTokens,
+          contextual_headers: true,
+          token_estimate: 'approximate (word-count heuristic, no tokenizer shipped)',
+        },
+        stats: {
+          chunk_count: chunks.length,
+          estimated_tokens: totalTokens,
+        },
+        chunks: chunks.map((c) => ({
+          id: c.id,
+          // `content` is what you embed: header + body.
+          content: c.content,
+          // `body` is the transcript text alone, for display or re-chunking.
+          body: c.body,
+          metadata: {
+            chunk_index: c.chunkIndex,
+            start_seconds: c.startSeconds,
+            end_seconds: c.endSeconds,
+            time_range: c.timeRange,
+            url: c.url,
+            word_count: c.wordCount,
+            estimated_tokens: c.estimatedTokens,
+            title: meta.title ?? null,
+            platform: meta.platform ?? 'unknown',
+          },
+        })),
+      },
+      null,
+      2,
+    );
+  }
+
+  /**
+   * Spreadsheet-friendly rows.
+   *
+   * Also the simplest route into flashcard tools: Anki, Quizlet and RemNote all
+   * import CSV, so a timestamped transcript becomes study material without any
+   * intermediate conversion step.
+   */
+  private static formatAsCSV(cues: Cue[], meta: SourceMeta): string {
+    const header = ['start_seconds', 'timestamp', 'text', 'url'];
+    const rows = cues.map((cue) =>
+      [
+        csvField(cue.startSeconds),
+        csvField(cue.startSeconds === null ? null : formatTimestamp(cue.startSeconds)),
+        csvField(cue.text),
+        csvField(buildDeepLink(meta.url, cue.startSeconds)),
+      ].join(','),
+    );
+    return [header.join(','), ...rows].join(CRLF) + CRLF;
+  }
+
+  /**
+   * Cloze flashcards, ready for Anki.
+   *
+   * Each row is a sentence the lecturer actually said with its key term blanked
+   * out, plus a link back to the moment it was said. Anki imports this directly
+   * and handles the scheduling, which together covers the two study techniques
+   * with the strongest evidence behind them: practice testing and distributed
+   * practice.
+   *
+   * Nothing is generated, so no card can state something the lecture did not.
+   */
+  private static formatAsAnki(cues: Cue[], meta: SourceMeta): string {
+    const definitions = extractDefinitions(cues);
+    const cards = buildClozeCards(definitions);
+
+    const header = ['front', 'back', 'source', 'url'];
+    const rows = cards.map((card) =>
+      [
+        csvField(card.front),
+        csvField(card.back),
+        csvField(
+          [meta.title, card.timestamp].filter(Boolean).join(' · ') || 'Lecture transcript',
+        ),
+        csvField(buildDeepLink(meta.url, card.startSeconds)),
+      ].join(','),
+    );
+
+    return [header.join(','), ...rows].join(CRLF) + CRLF;
+  }
+
+  /**
+   * Build a safe download filename.
+   *
+   * Note the extension comes from `FORMAT_EXTENSIONS`, not the format name —
+   * `markdown` must yield `.md`, and `rag` must yield `.json`.
    */
   static generateFilename(videoTitle: string, format: string): string {
-    const sanitizedTitle = videoTitle
-      .replace(/[^a-zA-Z0-9\s-]/g, '')
-      .replace(/\s+/g, '_')
-      .substring(0, 50);
-    
+    const sanitizedTitle =
+      videoTitle
+        .replace(/[^a-zA-Z0-9\s-]/g, '')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '')
+        .substring(0, 50) || 'transcript';
+
     const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-    return `${sanitizedTitle}_${timestamp}.${format}`;
+    const extension = FORMAT_EXTENSIONS[format as ExportFormat] ?? 'txt';
+    return `${sanitizedTitle}_${timestamp}.${extension}`;
   }
 
-  /**
-   * Get MIME type for format
-   */
   static getMimeType(format: string): string {
-    switch (format) {
-      case 'markdown':
-      case 'txt':
-        return 'text/plain';
-      case 'json':
-      case 'rag':
-        return 'application/json';
-      default:
-        return 'text/plain';
-    }
+    return FORMAT_MIME_TYPES[format as ExportFormat] ?? 'text/plain';
   }
 
   /**
@@ -424,12 +960,5 @@ export class ExtensionService {
       type: 'EXPORT_BATCH_TRANSCRIPTS', 
       data: { format } 
     });
-  }
-
-  /**
-   * Get active batch collection state from content script
-   */
-  static async getBatchState(): Promise<ExtensionServiceResponse<any>> {
-    return this.sendMessage({ type: 'GET_BATCH_STATE' });
   }
 }
