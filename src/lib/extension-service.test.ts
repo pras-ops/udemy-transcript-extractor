@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ExtensionService } from './extension-service';
+import { ExtensionService, normalizeLectureUrl } from './extension-service';
 import { parseCaptionFile } from './caption-formats';
 
 const RAW = [
@@ -8,6 +8,57 @@ const RAW = [
   '[00:12] The idea is to follow the slope downhill.',
   '[00:18] We compute a derivative and take a step.',
 ].join('\n\n');
+
+describe('normalizeLectureUrl', () => {
+  const LECTURE = 'https://www.udemy.com/course/deep-learning/learn/lecture/12345678';
+
+  it('matches a stored URL to the tab showing the same lecture', () => {
+    // The stored URL is whatever the tab showed when the transcript was taken;
+    // the tab open now usually carries different query params. Comparing raw
+    // URLs would miss the very tab we are looking for, and the timestamp would
+    // silently open a duplicate instead of seeking.
+    expect(normalizeLectureUrl(`${LECTURE}?start=0`)).toBe(normalizeLectureUrl(LECTURE));
+    expect(normalizeLectureUrl(`${LECTURE}#overview`)).toBe(normalizeLectureUrl(LECTURE));
+    expect(normalizeLectureUrl(`${LECTURE}/`)).toBe(normalizeLectureUrl(LECTURE));
+  });
+
+  it('keeps different lectures in the same course apart', () => {
+    // Seeking the wrong video is worse than not seeking at all.
+    const other = 'https://www.udemy.com/course/deep-learning/learn/lecture/87654321';
+    expect(normalizeLectureUrl(other)).not.toBe(normalizeLectureUrl(LECTURE));
+  });
+
+  it('never matches when there is no URL to match on', () => {
+    // Two lectures with no stored URL must not be treated as the same page.
+    expect(normalizeLectureUrl(undefined)).toBe('');
+    expect(normalizeLectureUrl('')).toBe('');
+  });
+
+  it('keeps YouTube videos apart, where the id lives in the query', () => {
+    // Dropping the query normalises every watch page to `youtube.com/watch`,
+    // so a timestamp would have seeked whichever YouTube tab was open.
+    const one = 'https://www.youtube.com/watch?v=aaaaaaaaaaa';
+    const two = 'https://www.youtube.com/watch?v=bbbbbbbbbbb';
+
+    expect(normalizeLectureUrl(one)).not.toBe(normalizeLectureUrl(two));
+    expect(normalizeLectureUrl(`${one}&t=90s`)).toBe(normalizeLectureUrl(one));
+    expect(normalizeLectureUrl(`${one}&list=PL123`)).toBe(normalizeLectureUrl(one));
+  });
+
+  it('settles the trailing slash without eating the video id behind it', () => {
+    // The slash now sits in front of a `?v=`, so stripping it from the end of
+    // the whole string would miss it here and strip the id itself elsewhere.
+    const one = 'https://www.youtube.com/watch?v=aaaaaaaaaaa';
+    expect(normalizeLectureUrl('https://www.youtube.com/watch/?v=aaaaaaaaaaa')).toBe(
+      normalizeLectureUrl(one),
+    );
+    expect(normalizeLectureUrl(one).endsWith('v=aaaaaaaaaaa')).toBe(true);
+  });
+
+  it('leaves a URL it cannot parse alone rather than dropping it', () => {
+    expect(normalizeLectureUrl('not a url')).toBe('not a url');
+  });
+});
 
 describe('generateFilename', () => {
   it('maps format ids to real file extensions', () => {

@@ -1,5 +1,6 @@
 // Extension Service for communicating with content script
 import { UdemyCourse } from './udemy-extractor';
+import { lectureId } from './collection';
 import { errorMessage } from './utils';
 import {
   buildChunks,
@@ -21,6 +22,41 @@ function toTimedCues(cues: Cue[]): TimedCue[] {
     .filter((cue) => cue.startSeconds !== null)
     .map((cue) => ({ startSeconds: cue.startSeconds as number, endSeconds: null, text: cue.text }));
 }
+
+/**
+ * A lecture URL reduced to what identifies the page.
+ *
+ * Stored URLs are whatever the tab showed when the transcript was taken, and
+ * the tab open now may carry a different `?autoplay=` or a fragment from a
+ * click on the sidebar. Comparing raw URLs would miss the very tab we are
+ * looking for, so this asks `lectureId` — the same rule that decides which
+ * lecture a transcript belongs to — rather than defining a second one.
+ *
+ * Two things are its own. An absent URL gives `''`, so a tab whose address the
+ * extension cannot read never matches a real lecture instead of falling back to
+ * something that might. And the trailing slash is settled here, because it is
+ * the one difference between two links to the same page that `lectureId` does
+ * not, and a tab can be showing either form.
+ */
+export function normalizeLectureUrl(url: string | undefined): string {
+  if (!url) return '';
+  // Only slashes ending the path: a `?v=` now follows it and must be kept.
+  return lectureId(url, url).replace(/\/+(?=$|\?)/, '');
+}
+
+/** What the content script sends back to a `SEEK_TO`. */
+interface TabReply {
+  success?: boolean;
+  error?: string;
+  data?: { seeked?: boolean; seconds?: number; reason?: string };
+}
+
+export type SeekResult =
+  /** The player moved. */
+  | { status: 'seeked'; seconds: number }
+  /** No tab was showing this lecture, so one was opened; the seek did not run. */
+  | { status: 'opened' }
+  | { status: 'failed'; reason: string };
 
 export type ExportFormat =
   | 'markdown'
@@ -310,6 +346,89 @@ export class ExtensionService {
     duration: string;
   }>> {
     return this.sendMessage({ type: 'GET_VIDEO_INFO' });
+  }
+
+  /**
+   * What happened when a moment was asked for.
+   *
+   * Three outcomes rather than a boolean, because they call for three different
+   * things from the reader: nothing, a second click once the tab has loaded, or
+   * an explanation.
+   */
+  static async seekLecture(
+    lectureUrl: string | undefined,
+    seconds: number,
+  ): Promise<SeekResult> {
+    if (!lectureUrl) {
+      return { status: 'failed', reason: 'No link was stored for this lecture.' };
+    }
+    if (typeof chrome === 'undefined' || !chrome.tabs) {
+      return { status: 'failed', reason: 'Extension APIs not available.' };
+    }
+
+    try {
+      const target = normalizeLectureUrl(lectureUrl);
+
+      // Every tab, not the active one. The dashboard is a tab itself, so the
+      // usual "active tab in the current window" target would send this to the
+      // page doing the asking.
+      //
+      // `tab.url` is only readable where the extension holds host permission,
+      // which is exactly the origins the content script runs on — so a tab we
+      // cannot see the URL of is also one we could not have seeked anyway.
+      const tabs = await chrome.tabs.query({});
+      const match = tabs.find(
+        (tab) => tab.id !== undefined && normalizeLectureUrl(tab.url) === target,
+      );
+
+      if (!match?.id) {
+        // A timestamp that does nothing because the lecture is closed is a dead
+        // end. Opening it is the obvious next step, but the player needs a
+        // moment to exist before it can be seeked, so this asks for one more
+        // click rather than racing the page load.
+        await chrome.tabs.create({ url: lectureUrl, active: true });
+        return { status: 'opened' };
+      }
+
+      // Bring it forward: a seek the reader cannot see happen is
+      // indistinguishable from one that failed.
+      await chrome.tabs.update(match.id, { active: true });
+      if (match.windowId !== undefined && chrome.windows) {
+        await chrome.windows.update(match.windowId, { focused: true }).catch(() => undefined);
+      }
+
+      const response = await this.sendToTab(match.id, { type: 'SEEK_TO', data: { seconds } });
+
+      if (!response?.success) {
+        return { status: 'failed', reason: response?.error ?? 'The page did not respond.' };
+      }
+      if (!response.data?.seeked) {
+        return { status: 'failed', reason: response.data?.reason ?? 'The player could not be reached.' };
+      }
+
+      return { status: 'seeked', seconds: response.data.seconds ?? seconds };
+    } catch (error) {
+      return { status: 'failed', reason: errorMessage(error, 'Could not reach the lecture tab.') };
+    }
+  }
+
+  /**
+   * Send to one named tab, injecting the content script if it is not there.
+   *
+   * A tab that was already open when the extension was last reloaded has no
+   * content script in it, and the reader has no way to know that — the lecture
+   * looks perfectly normal. Without this, the first click on a timestamp after
+   * every extension update would fail with "Receiving end does not exist".
+   */
+  private static async sendToTab(tabId: number, message: unknown): Promise<TabReply> {
+    try {
+      return await chrome.tabs.sendMessage(tabId, message);
+    } catch (error) {
+      if (!errorMessage(error).includes('Receiving end does not exist')) throw error;
+
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['content-script.js'] });
+      return await chrome.tabs.sendMessage(tabId, message);
+    }
   }
 
   /**

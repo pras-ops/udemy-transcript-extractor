@@ -12,6 +12,8 @@ import {
   hasGenericTranscript,
   isGenericVideoPage,
 } from './generic-extractor';
+import { installQuickNote } from './quick-note';
+import { showPageToast, type ToastTone } from './page-toast';
 
 
 // Fallback: if imports fail, create minimal extractors
@@ -34,7 +36,7 @@ declare global {
 
 // Message types for communication with popup
 export interface ContentScriptMessage {
-  type: 'EXTRACT_COURSE_STRUCTURE' | 'EXTRACT_TRANSCRIPT' | 'GET_VIDEO_INFO' | 'CHECK_AVAILABILITY' | 'START_BATCH_COLLECTION' | 'NAVIGATE_TO_NEXT_LECTURE' | 'COLLECT_CURRENT_TRANSCRIPT' | 'EXPORT_BATCH_TRANSCRIPTS' | 'TEST_COURSE_STRUCTURE' | 'PREPARE_CAPTURE' | 'RESUME_PLAYBACK';
+  type: 'EXTRACT_COURSE_STRUCTURE' | 'EXTRACT_TRANSCRIPT' | 'GET_VIDEO_INFO' | 'CHECK_AVAILABILITY' | 'START_BATCH_COLLECTION' | 'NAVIGATE_TO_NEXT_LECTURE' | 'COLLECT_CURRENT_TRANSCRIPT' | 'EXPORT_BATCH_TRANSCRIPTS' | 'TEST_COURSE_STRUCTURE' | 'PREPARE_CAPTURE' | 'RESUME_PLAYBACK' | 'SEEK_TO' | 'SHOW_TOAST';
   data?: any;
 }
 
@@ -69,6 +71,11 @@ class ContentScript {
       if (this.isInitialized) return;
       
       console.log('🎯 Initializing NEW Content Script v3.0.0...');
+
+      // Alt+Shift+N writes a note against the current moment, without leaving
+      // the lecture. Installed unconditionally: the shortcut checks for a video
+      // itself, so it costs nothing on a page that has none.
+      installQuickNote();
       
       // Listen for messages from popup and background
       chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
@@ -134,6 +141,22 @@ class ContentScript {
 
         case 'RESUME_PLAYBACK': {
           sendResponse({ success: true, data: this.resumePlayback() });
+          break;
+        }
+
+        case 'SEEK_TO': {
+          sendResponse({ success: true, data: this.seekTo(Number(message.data?.seconds)) });
+          break;
+        }
+
+        // The background worker has nowhere of its own to speak: a shortcut
+        // does not open the popup, so it reports through the page.
+        case 'SHOW_TOAST': {
+          showPageToast(
+            String(message.data?.message ?? ''),
+            (message.data?.tone as ToastTone) ?? 'ok',
+          );
+          sendResponse({ success: true });
           break;
         }
 
@@ -350,6 +373,39 @@ class ContentScript {
       paused: video.paused,
       wasPlaying,
     };
+  }
+
+  /**
+   * Put the player on a given moment.
+   *
+   * This is the way back from the notes to the lecture. Udemy ignores `#t=` in
+   * the URL — which is why people scrub the timeline by hand hunting for the
+   * line they just read — but a content script holds the `<video>` element
+   * itself, where the playhead is simply a property. The same access that
+   * pauses for a screenshot seeks for a note.
+   *
+   * Playback is deliberately not started. Someone who clicks a timestamp while
+   * reading may want the surrounding lines first, and a video that starts
+   * talking at them is more annoying to undo than pressing play is to do.
+   *
+   * Seeking past the end leaves the player on a black frame, so the moment is
+   * clamped — but only when the duration is known. A tab that has just opened
+   * reports `NaN`, and clamping against that would seek to nowhere.
+   */
+  private seekTo(seconds: number) {
+    if (!Number.isFinite(seconds) || seconds < 0) {
+      return { seeked: false, reason: 'Not a valid moment.' };
+    }
+
+    const video = findPrimaryVideo();
+    if (!video) return { seeked: false, reason: 'No video found on this page.' };
+
+    const duration = video.duration;
+    video.currentTime = Number.isFinite(duration)
+      ? Math.min(seconds, Math.max(duration - 0.5, 0))
+      : seconds;
+
+    return { seeked: true, seconds: video.currentTime };
   }
 
   /** Resume a lecture this extension paused to take a still. */
