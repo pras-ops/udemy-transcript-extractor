@@ -1,7 +1,7 @@
 // Udemy Transcript Extractor
 // Based on the provided HTML structure from Udemy course pages
 
-import { estimateCueTimings } from './transcript';
+import { estimateCueTimings, orderCollectedCues } from './transcript';
 
 export interface UdemySection {
   id: string;
@@ -789,6 +789,18 @@ export class UdemyExtractor {
       }
     };
 
+    // Start from the top, not from wherever the panel happens to be sitting.
+    //
+    // Udemy autoscrolls the transcript to follow playback, so on a lecture the
+    // user has been watching the panel opens mid-way through. Harvesting from
+    // there and only ever scrolling down means the opening lines are gathered
+    // last — or, if the scroll never returns above the starting offset, not at
+    // all.
+    if (scroller && scroller.scrollTop > 0) {
+      scroller.scrollTop = 0;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+
     harvest();
 
     if (scroller && scroller.scrollHeight > scroller.clientHeight) {
@@ -814,12 +826,13 @@ export class UdemyExtractor {
       `🎯 Collected ${collected.length} cues from the transcript panel (${timed} with timestamps).`,
     );
 
-    // Only sort when we actually have timings for everything; otherwise DOM
-    // order from the top-to-bottom scroll is the more trustworthy ordering.
-    const ordered =
-      timed === collected.length
-        ? [...collected].sort((a, b) => (a.seconds ?? 0) - (b.seconds ?? 0))
-        : collected;
+    // Order by the clock, anchoring untimed cues to the line before them.
+    //
+    // This used to sort only when every single cue carried a timestamp, so one
+    // untimed line discarded the ordering of the several hundred around it and
+    // the transcript fell back to harvest order — which is exactly the order
+    // that cannot be trusted.
+    const ordered = orderCollectedCues(collected);
 
     return ordered.map((cue) =>
       cue.seconds === null ? cue.text : `[${this.formatTime(cue.seconds)}] ${cue.text}`,

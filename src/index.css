@@ -13,7 +13,38 @@ body {
   height: 100%;
   min-height: 100vh;
   box-sizing: border-box;
-  overflow: hidden; /* Prevent scrollbars in extension popup */
+}
+
+/*
+ * Popup-only sizing.
+ *
+ * These rules belong to a fixed-size panel, not to every page the extension
+ * renders. Applied globally they reached the dashboard too, where `overflow:
+ * hidden` meant a full page could not be scrolled at all and `user-select:
+ * none` meant its transcript could not be selected — which silently disabled
+ * highlighting, a feature built entirely on selecting text.
+ *
+ * The class is set by the popup entry point, so a page that does not opt in
+ * behaves like an ordinary document.
+ */
+body.is-popup {
+  overflow: hidden;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+
+/*
+ * A full page grows with its content.
+ *
+ * The base layer pins `html, body, #root` to `height: 100%` for the popup,
+ * which would otherwise cap the dashboard at exactly one viewport and leave
+ * anything below it unreachable.
+ */
+body:not(.is-popup),
+body:not(.is-popup) #root {
+  height: auto;
+  min-height: 100vh;
 }
 
 @theme inline {
@@ -141,9 +172,8 @@ body {
     padding: 0;
   }
   
-  /* Extension-specific styles */
-  body {
-    /* Prevent text selection in extension popup */
+  /* Popup only — see the note beside `body.is-popup` above. */
+  body.is-popup {
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;

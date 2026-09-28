@@ -19,6 +19,12 @@ import {
   ChevronRight,
   Camera,
   ScanText,
+  Zap,
+  ChevronDown,
+  Library,
+  FileText,
+  Highlighter,
+  StickyNote,
   X,
 } from 'lucide-react';
 import { StorageService } from '../../lib/storage-service';
@@ -26,7 +32,6 @@ import type { ExportFormat } from '../../lib/extension-service';
 import type { SourceMeta } from '../../lib/transcript';
 import {
   addLecture,
-  removeLecture,
   lectureId,
   loadCollection,
   saveCollection,
@@ -45,6 +50,20 @@ import { planFrameExport, type CapturedFrame } from '../../lib/frame-capture';
 import { probeImageModel, startModelDownload, type AiProbe } from '../../lib/on-device-ai';
 import { createZip, dataUrlBytes, textBytes } from '../../lib/zip';
 import { searchService } from '../../lib/search-service';
+import { applyTheme, storeTheme } from '../../lib/theme';
+import { lectureActivity, setLectureComplete } from '../../lib/library-db';
+import {
+  activityCount,
+  countWords,
+  lectureStatus,
+  STATUS_LABELS,
+  type LectureActivity,
+} from '../../lib/library-schema';
+import {
+  loadCourseCollection,
+  removeCourseLecture,
+  saveCourseLecture,
+} from '../../lib/collection-store';
 
 // Helper function for dynamic ExtensionService import
 const getExtensionService = async () => {
@@ -53,6 +72,20 @@ const getExtensionService = async () => {
 };
 
 /** What each export is for, shown under the picker so the choice is obvious. */
+/** Short name for the collapsed export row, so the choice stays visible. */
+const FORMAT_LABELS: Record<ExportFormat, string> = {
+  markdown: 'Markdown',
+  organized: 'Organized notes',
+  obsidian: 'Obsidian',
+  txt: 'Plain text',
+  json: 'JSON',
+  rag: 'Retrieval chunks',
+  srt: 'SubRip',
+  vtt: 'WebVTT',
+  csv: 'Spreadsheet',
+  anki: 'Anki cards',
+};
+
 const FORMAT_HINTS: Record<ExportFormat, string> = {
   markdown:
     'Readable notes with plain-text timestamps. Best for pasting into ChatGPT, Claude or Notion.',
@@ -277,6 +310,7 @@ export const TranscriptExtractorPopup = () => {
   // Organising loads the 30 MB embedding model if search has not already done
   // so. Without a working state the buttons look broken for a second or two.
   const [isExporting, setIsExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   /**
    * Whether the user has chosen export settings during this popup session.
@@ -317,34 +351,20 @@ export const TranscriptExtractorPopup = () => {
 
 
   const handleThemeToggle = () => {
-    const newDarkMode = !isDarkMode;
-    setIsDarkMode(newDarkMode);
-
-    // Apply the theme immediately
-    if (newDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-
-    // Save theme preference to localStorage
-    localStorage.setItem('transcript-extractor-theme', newDarkMode ? 'dark' : 'light');
+    const next = isDarkMode ? 'light' : 'dark';
+    setIsDarkMode(next === 'dark');
+    storeTheme(next);
   };
 
   // Check availability when component mounts and load saved state
   useEffect(() => {
-    // Load saved theme preference
-    const savedTheme = localStorage.getItem('transcript-extractor-theme');
-    const shouldUseDarkMode = savedTheme === 'dark';
-
-    setIsDarkMode(shouldUseDarkMode);
-
-    // Apply the theme immediately
-    if (shouldUseDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    // One implementation, shared with the dashboard.
+    //
+    // The popup used to decide this itself with `saved === 'dark'`, which
+    // ignores the system preference entirely. Two surfaces of the same
+    // extension, on the same origin, could therefore disagree about the theme
+    // — the popup opening dark and the library opening light.
+    setIsDarkMode(applyTheme() === 'dark');
 
     loadSavedState();
     checkPageAvailability();
@@ -415,7 +435,14 @@ export const TranscriptExtractorPopup = () => {
       const response = await (await getExtensionService()).checkAvailability();
       const url = await (await getExtensionService()).getCurrentTabUrl();
       setPageUrl(url);
-      setCollection(await loadCollection(url ?? undefined));
+      // Reads the indexed library, migrating this course across on first sight
+      // and falling back to the old storage if anything goes wrong.
+      setCollection(
+        await loadCourseCollection(url ?? undefined, {
+          courseTitle: courseStructure?.title,
+          instructor: courseStructure?.instructor,
+        }),
+      );
 
       if (response.success && response.data) {
         setAvailability(response.data);
@@ -478,15 +505,19 @@ export const TranscriptExtractorPopup = () => {
         // next lecture used to discard the previous one, which made the tool
         // work per video and not per course.
         const id = lectureId(pageUrl ?? undefined, currentVideo?.title ?? 'lecture');
-        const next = addLecture(collection, {
+        const collected = {
           id,
           title: currentVideo?.title || 'Untitled lecture',
           url: pageUrl ?? undefined,
           transcript: response.data,
           collectedAt: Date.now(),
-        });
+        };
+        const next = addLecture(collection, collected);
         setCollection(next);
-        void saveCollection(pageUrl ?? undefined, next);
+        void saveCourseLecture(collected, next, pageUrl ?? undefined, {
+          courseTitle: courseStructure?.title,
+          instructor: courseStructure?.instructor,
+        });
 
         try {
           const copied = await (await getExtensionService()).copyToClipboard(response.data);
@@ -711,8 +742,62 @@ export const TranscriptExtractorPopup = () => {
 
   const hasAnything = searchableLectures.length > 0;
 
+  /**
+   * Lectures in the course, when the sidebar has been read.
+   *
+   * Null when it has not. A progress bar against a denominator we are guessing
+   * at is worse than a plain count — it would tell the user they are 1/8
+   * through a course that has sixty lectures.
+   */
+  const totalLectures: number | null = useMemo(() => {
+    const sections = courseStructure?.sections;
+    if (!Array.isArray(sections)) return null;
+    const total = sections.reduce(
+      (sum: number, section: { lectures?: unknown[] }) =>
+        sum + (Array.isArray(section.lectures) ? section.lectures.length : 0),
+      0,
+    );
+    return total > 0 ? total : null;
+  }, [courseStructure]);
+
   const isBusy = isExtracting || isNavigating;
   const isDone = extractionStatus === 'success' && Boolean(extractedTranscript);
+
+  /** Words in the transcript just captured, ignoring timestamp markers. */
+  const transcriptWords = useMemo(
+    () => (extractedTranscript ? countWords(extractedTranscript) : 0),
+    [extractedTranscript],
+  );
+
+  /**
+   * What is attached to the lecture on screen.
+   *
+   * Answers "where am I with this one" rather than "what can this extension
+   * do" — the counts all come from indexed lookups, so nothing large is read
+   * to show them.
+   */
+  const [activity, setActivity] = useState<LectureActivity | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    lectureActivity(currentLectureId)
+      .then((found) => {
+        if (!cancelled) setActivity(found);
+      })
+      .catch(() => {
+        if (!cancelled) setActivity(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Re-read whenever the lecture changes or something is attached to it.
+  }, [currentLectureId, frames.length, collection.length, extractedTranscript]);
+
+  const toggleComplete = async () => {
+    if (!activity) return;
+    await setLectureComplete(currentLectureId, activity.completedAt === undefined);
+    setActivity(await lectureActivity(currentLectureId));
+  };
 
   /**
    * Nothing to extract here.
@@ -742,22 +827,33 @@ export const TranscriptExtractorPopup = () => {
                   <Clock className="w-3 h-3" />
                   {currentVideo.duration}
                 </span>
-                {availability && (
-                  <span
-                    className={`inline-flex items-center gap-1 font-medium ${
-                      availability.hasTranscript
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-amber-600 dark:text-amber-500'
-                    }`}
-                  >
-                    {availability.hasTranscript ? (
-                      <CheckCircle className="w-3 h-3" />
-                    ) : (
-                      <AlertCircle className="w-3 h-3" />
-                    )}
-                    {availability.hasTranscript ? 'Transcript available' : 'No transcript'}
+                {/* One statement about the transcript, not two.
+                    This used to show "Transcript available" from the page's
+                    point of view directly above a button offering to extract
+                    it — the same word meaning "the site has one" and "we have
+                    one". Capture state wins, because that is the thing the
+                    reader is actually deciding about. */}
+                {isDone ? (
+                  <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle className="w-3 h-3" />
+                    Captured · {transcriptWords.toLocaleString()} words
                   </span>
-                )}
+                ) : isExtracting ? (
+                  <span className="inline-flex items-center gap-1 font-medium text-blue-600 dark:text-blue-400">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Extracting…
+                  </span>
+                ) : availability?.hasTranscript ? (
+                  <span className="inline-flex items-center gap-1 font-medium text-slate-500 dark:text-slate-400">
+                    <FileText className="w-3 h-3" />
+                    Ready to extract
+                  </span>
+                ) : availability ? (
+                  <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-500">
+                    <AlertCircle className="w-3 h-3" />
+                    No transcript on this page
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>
@@ -825,10 +921,16 @@ export const TranscriptExtractorPopup = () => {
     </div>
   );
 
+  /** Open the library in a tab, reusing one if it is already open. */
+  const openDashboard = () => {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.getURL) return;
+    const url = chrome.runtime.getURL('dashboard.html');
+    if (chrome.tabs?.create) void chrome.tabs.create({ url });
+    else window.open(url, '_blank');
+  };
+
   const dropLecture = async (id: string) => {
-    const next = removeLecture(collection, id);
-    setCollection(next);
-    await saveCollection(pageUrl ?? undefined, next);
+    setCollection(await removeCourseLecture(id, collection, pageUrl ?? undefined));
   };
 
   /** What has been gathered so far, and a way to prune it. */
@@ -836,20 +938,44 @@ export const TranscriptExtractorPopup = () => {
     if (collection.length === 0) return null;
 
     return (
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3">
-        <div className="flex items-baseline justify-between gap-2 mb-2">
+      // A flat section rather than a card. This sits inside the popup's own
+      // frame already; a bordered box around it is a card inside a card.
+      <section>
+        <div className="flex items-baseline justify-between gap-2 mb-1.5">
           <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            Collected this course
+            Course progress
           </h3>
-          <span className="inline-flex items-center gap-1.5 text-[11px] tabular-nums">
-            <span className="px-1.5 py-0.5 rounded-md bg-blue-600 text-white font-semibold">
-              {collection.length}
-            </span>
-            <span className="text-slate-500 dark:text-slate-400">
-              {totalWords(collection).toLocaleString()} words
-            </span>
+          <span className="text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
+            {totalWords(collection).toLocaleString()} words
           </span>
         </div>
+
+        {/* A bar only when the denominator is real; otherwise a plain count,
+            which is honest about not knowing how long the course is. */}
+        {totalLectures !== null ? (
+          <>
+            <div className="flex items-baseline justify-between gap-2 mb-1">
+              <span className="text-[12px] font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
+                {collection.length} / {totalLectures} lectures
+              </span>
+              <span className="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                {Math.round((collection.length / totalLectures) * 100)}%
+              </span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700 mb-2">
+              <div
+                className="h-full rounded-full bg-blue-600 transition-all"
+                style={{
+                  width: `${Math.min(100, (collection.length / totalLectures) * 100)}%`,
+                }}
+              />
+            </div>
+          </>
+        ) : (
+          <p className="text-[12px] font-semibold text-slate-700 dark:text-slate-200 tabular-nums mb-2">
+            {collection.length} {collection.length === 1 ? 'lecture' : 'lectures'} collected
+          </p>
+        )}
 
         <ul className="space-y-0.5 max-h-32 overflow-y-auto -mx-1">
           {collection.map((lecture, i) => (
@@ -875,10 +1001,10 @@ export const TranscriptExtractorPopup = () => {
           ))}
         </ul>
 
-        <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-          Exports cover every lecture above. Extract on the next one to add to it.
+        <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+          Exports cover every lecture above.
         </p>
-      </div>
+      </section>
     );
   };
 
@@ -1011,8 +1137,11 @@ export const TranscriptExtractorPopup = () => {
             <h1 className="text-[13px] font-semibold leading-tight truncate">
               Transcript Extractor
             </h1>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
-              Runs entirely on your machine
+            {/* "Local · private" says it in two words. The long version lives
+                in the privacy policy, not on every screen. */}
+            <p className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+              Local · private
             </p>
           </div>
         </div>
@@ -1034,7 +1163,7 @@ export const TranscriptExtractorPopup = () => {
         <section>
           <div className="flex items-center justify-between gap-2 mb-2">
             <h3 className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-              Screenshots
+              Visual notes
               {frames.length > 0 && (
                 <span className="ml-1.5 normal-case font-semibold text-blue-600 dark:text-blue-400">
                   {frames.length}
@@ -1091,66 +1220,66 @@ export const TranscriptExtractorPopup = () => {
           {/* Whether this browser could read the text out of a screenshot.
               Reported rather than assumed — Chrome's on-device model is absent
               on plenty of machines. */}
-          {aiProbe && (
-            <div className="mb-2 flex items-start gap-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2.5 py-2">
-              <span
-                aria-hidden="true"
-                className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
-                  aiProbe.ready
-                    ? 'bg-emerald-500'
-                    : aiProbe.status === 'downloadable' || aiProbe.status === 'downloading'
-                      ? 'bg-amber-500'
-                      : 'bg-slate-400'
-                }`}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  <span className="font-semibold text-slate-600 dark:text-slate-300">
-                    On-device AI: {aiProbe.status}
-                  </span>
-                  <br />
-                  {aiProbe.detail}
+          {/* Capability, not an announcement.
+              When the model is ready there is nothing to act on, so it earns a
+              chip rather than a panel. It only grows back into something
+              bigger when there is a decision to make — a download to start —
+              or an explanation to give for why Read is missing. */}
+          {aiProbe?.ready && (
+            <p className="mb-2 inline-flex items-center gap-1 rounded-md bg-emerald-50 dark:bg-emerald-900/25 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+              <Zap className="w-3 h-3" />
+              On-device AI
+            </p>
+          )}
+
+          {/* Chrome sits at "Pending Usage" until something asks for the model.
+              Nothing here asks without a click: it is a ~4 GB download, and it
+              is the user's bandwidth and disk. */}
+          {(aiProbe?.status === 'downloadable' || aiProbe?.status === 'downloading') && (
+            <div className="mb-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2.5 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                  Read text off screenshots with Chrome's on-device model.
                 </p>
-
-                {/* Chrome sits at "Pending Usage" until something asks for the
-                    model. Nothing here asks without a click: it is a ~4 GB
-                    download, and it is the user's bandwidth and disk. */}
-                {(aiProbe.status === 'downloadable' || aiProbe.status === 'downloading') && (
-                  <div className="mt-2">
-                    <button
-                      onClick={handleInstallModel}
-                      disabled={isInstallingModel}
-                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 transition-colors"
-                    >
-                      {isInstallingModel && <Loader2 className="w-3 h-3 animate-spin" />}
-                      {isInstallingModel ? 'Installing…' : 'Install model (~4 GB)'}
-                    </button>
-
-                    {isInstallingModel && (
-                      <>
-                        <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                          <div
-                            className={`h-full bg-blue-600 ${
-                              installProgress === null ? 'w-1/3 animate-pulse' : 'transition-all'
-                            }`}
-                            style={
-                              installProgress === null
-                                ? undefined
-                                : { width: `${Math.round(installProgress * 100)}%` }
-                            }
-                          />
-                        </div>
-                        <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
-                          {installProgress === null
-                            ? 'Downloading — Chrome does not report a percentage yet.'
-                            : `${Math.round(installProgress * 100)}% — you can keep using the extension.`}
-                        </p>
-                      </>
-                    )}
-                  </div>
-                )}
+                <button
+                  onClick={handleInstallModel}
+                  disabled={isInstallingModel}
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 transition-colors"
+                >
+                  {isInstallingModel && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {isInstallingModel ? 'Installing…' : 'Install (~4 GB)'}
+                </button>
               </div>
+
+              {isInstallingModel && (
+                <>
+                  <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                    <div
+                      className={`h-full bg-blue-600 ${
+                        installProgress === null ? 'w-1/3 animate-pulse' : 'transition-all'
+                      }`}
+                      style={
+                        installProgress === null
+                          ? undefined
+                          : { width: `${Math.round(installProgress * 100)}%` }
+                      }
+                    />
+                  </div>
+                  <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
+                    {installProgress === null
+                      ? 'Downloading — Chrome does not report a percentage yet.'
+                      : `${Math.round(installProgress * 100)}% — you can keep using the extension.`}
+                  </p>
+                </>
+              )}
             </div>
+          )}
+
+          {/* Why the Read button is absent. Silence would read as a bug. */}
+          {(aiProbe?.status === 'unavailable' || aiProbe?.status === 'unsupported') && (
+            <p className="mb-2 text-[10px] leading-relaxed text-slate-400 dark:text-slate-500">
+              {aiProbe.detail}
+            </p>
           )}
 
           {frames.length === 0 ? (
@@ -1238,30 +1367,115 @@ export const TranscriptExtractorPopup = () => {
           )}
         </section>
 
+        {/* Where this lecture stands.
+            Every count is an indexed lookup, and the status is derived from
+            them — the only stored part is "done", which is the one judgement
+            the data cannot make on the reader's behalf. */}
+        {activity && (activity.hasTranscript || activityCount(activity) > 0) && (
+          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3">
+            <div className="flex items-center justify-between gap-2 mb-2.5">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                This lecture
+              </h3>
+              <span
+                className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+                  lectureStatus(activity) === 'completed'
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                    : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                }`}
+              >
+                {STATUS_LABELS[lectureStatus(activity)]}
+              </span>
+            </div>
+
+            <dl className="grid grid-cols-4 gap-2 mb-2.5">
+              {[
+                { icon: <FileText className="w-3.5 h-3.5" />, label: 'Transcript', value: activity.hasTranscript ? '✓' : '—' },
+                { icon: <Highlighter className="w-3.5 h-3.5" />, label: 'Highlights', value: String(activity.highlights) },
+                { icon: <StickyNote className="w-3.5 h-3.5" />, label: 'Notes', value: String(activity.notes) },
+                { icon: <Camera className="w-3.5 h-3.5" />, label: 'Stills', value: String(activity.screenshots) },
+              ].map((entry) => (
+                <div key={entry.label} className="text-center">
+                  <dd className="text-[15px] font-semibold tabular-nums leading-none text-slate-700 dark:text-slate-200">
+                    {entry.value}
+                  </dd>
+                  <dt className="mt-1 text-[9px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    {entry.label}
+                  </dt>
+                </div>
+              ))}
+            </dl>
+
+            <button
+              onClick={() => void toggleComplete()}
+              className={`w-full rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                activity.completedAt === undefined
+                  ? 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'
+                  : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+              }`}
+            >
+              {activity.completedAt === undefined ? 'Mark as done' : '✓ Done — undo'}
+            </button>
+          </section>
+        )}
+
         {collection.length > 0 && renderCollectionSection()}
+
+        {/* The library, at full size.
+            A popup is the wrong place to read three thousand words or search
+            across courses — and it is destroyed the moment it loses focus, so
+            it cannot even finish the work. The dashboard is an ordinary tab. */}
+        <button
+          onClick={openDashboard}
+          className="flex w-full items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+        >
+          <Library className="w-4 h-4 shrink-0 text-slate-500 dark:text-slate-400" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-semibold text-slate-700 dark:text-slate-200">
+              Open library
+            </span>
+            <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+              Read, search and annotate everything you have collected
+            </span>
+          </span>
+          <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
+        </button>
 
         {hasAnything && (
           <>
             <div className="border-t border-slate-200 dark:border-slate-800" />
-            {renderExportOptionsSection()}
+
+            {/* Export is what you do once, at the end — not the thing the
+                popup should lead with. Collapsed until asked for, so the
+                format picker and its explanation stop competing with the
+                lecture and the course. */}
+            <button
+              onClick={() => setExportOpen((open) => !open)}
+              aria-expanded={exportOpen}
+              className="flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+            >
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                Export
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                {FORMAT_LABELS[exportFormat]}
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform ${exportOpen ? 'rotate-180' : ''}`}
+                />
+              </span>
+            </button>
+
+            {exportOpen && renderExportOptionsSection()}
           </>
         )}
       </main>
 
-      <footer className="border-t border-slate-200 dark:border-slate-800 px-4 py-2.5">
-        <div className="flex items-center justify-center gap-3 text-[10px] text-slate-400 dark:text-slate-500">
-          <span className="inline-flex items-center gap-1">
-            <Lock className="w-3 h-3" />
-            Local-first
-          </span>
-          <span aria-hidden="true">·</span>
-          <span className="inline-flex items-center gap-1">
-            <Github className="w-3 h-3" />
-            Open source
-          </span>
-          <span aria-hidden="true">·</span>
-          <span>MIT</span>
-        </div>
+      {/* Trust signals, not a nav bar. Vertical space in a popup is the
+          scarcest thing there is. */}
+      <footer className="border-t border-slate-200 dark:border-slate-800 px-4 py-1.5">
+        <p className="text-center text-[10px] text-slate-400 dark:text-slate-500">
+          Open source · MIT
+        </p>
       </footer>
     </div>
   );

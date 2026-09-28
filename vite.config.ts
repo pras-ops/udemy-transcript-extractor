@@ -28,7 +28,11 @@ export default defineConfig({
       // offscreen document: both existed to host an inference runtime, and the
       // static embedding model does not need one.
       input: {
-        main: path.resolve(__dirname, 'index.html')
+        main: path.resolve(__dirname, 'index.html'),
+        // The library, as a full extension page. Unlike the popup it is not
+        // torn down when it loses focus, which is what makes whole-library
+        // indexing and cross-course search viable at all.
+        dashboard: path.resolve(__dirname, 'dashboard.html')
       },
       output: {
         entryFileNames: '[name].js',

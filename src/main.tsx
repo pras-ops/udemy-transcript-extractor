@@ -2,33 +2,15 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
+import { applyTheme } from './lib/theme';
 
-/**
- * Apply the saved theme before first paint.
- *
- * This previously forced light mode unconditionally and registered a
- * `prefers-color-scheme` listener that re-forced it, so the popup's own dark
- * mode toggle was undone whenever the OS theme changed. The stored preference
- * is the single source of truth; the system preference is only the default for
- * a user who has never chosen.
- */
-const THEME_KEY = 'transcript-extractor-theme';
+// Before first paint, or the popup flashes the wrong colours. The same call
+// runs in the dashboard entry, so both surfaces resolve the theme identically.
+applyTheme();
 
-function applyStoredTheme() {
-  let stored: string | null = null;
-  try {
-    stored = localStorage.getItem(THEME_KEY);
-  } catch {
-    // Storage can be unavailable; fall through to the system preference.
-  }
-
-  const prefersDark =
-    stored === null && window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-  document.documentElement.classList.toggle('dark', stored === 'dark' || prefersDark);
-}
-
-applyStoredTheme();
+// Opt this page into the fixed-size panel rules. The dashboard deliberately
+// does not, so it scrolls and its text can be selected.
+document.body.classList.add('is-popup');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

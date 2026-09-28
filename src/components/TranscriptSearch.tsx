@@ -388,12 +388,12 @@ export const TranscriptSearch: React.FC<TranscriptSearchProps> = ({
                 // like a button that does nothing.
                 <p className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
                   <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  Summary, chapters and key concepts — read from this transcript.
+                  Key moments, chapters and concepts — read from this transcript.
                 </p>
               ) : (
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs text-slate-600 dark:text-slate-300">
-                    Build a summary, chapters and key concepts from this transcript.
+                    Find key moments, chapters and concepts in this transcript.
                   </p>
                   <button
                     onClick={() => void runAnalysis()}
@@ -409,7 +409,11 @@ export const TranscriptSearch: React.FC<TranscriptSearchProps> = ({
             {summaries.length > 0 && (
               <section>
                 <h3 className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">
-                  Summary · the lecturer's own words
+                  {/* "Key moments", not "Summary". These are passages the
+                      lecturer actually spoke, selected — nothing was written.
+                      Calling it a summary implies generation, and would make
+                      the genuinely generated tier below indistinguishable. */}
+                  Key moments
                 </h3>
 
                 <div className="space-y-3">
