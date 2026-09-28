@@ -24,65 +24,65 @@ import {
 } from './frame-capture';
 import { readFrameText, type FrameReadResult } from './on-device-ai';
 import { dataUrlBytes } from './zip';
+import {
+  deleteScreenshot,
+  importLegacyFrames,
+  listAllScreenshots,
+  listScreenshots,
+  saveScreenshot,
+} from './library-db';
+import { courseIdFromUrl } from './library-schema';
 
 /* -------------------------------------------------------------------------- */
 /* Storage                                                                     */
 /* -------------------------------------------------------------------------- */
 
-const DB_NAME = 'transcript-extractor-frames';
-const DB_VERSION = 1;
-const STORE = 'frames';
+/**
+ * Frames live in the library, not in a database of their own.
+ *
+ * They used to have one, which meant the popup wrote captures somewhere the
+ * dashboard never read: every frame taken after the library's one-time
+ * migration was invisible in the dashboard and missing from every export it
+ * produced, and a readout made in one place never reached the other.
+ *
+ * These are thin delegations, so the popup keeps calling exactly what it
+ * already called.
+ */
 
-function openDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+/**
+ * Bring the old standalone store across, at most once per page.
+ *
+ * Lazy rather than wired into each entry point: every reader needs it and none
+ * of them should have to remember to ask.
+ */
+let legacyImport: Promise<unknown> | null = null;
 
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        // Keyed by lecture and moment: capturing the same second twice is a
-        // correction, not a second copy.
-        const store = db.createObjectStore(STORE, { keyPath: ['lectureId', 'seconds'] });
-        store.createIndex('lectureId', 'lectureId', { unique: false });
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('Could not open the frame store'));
-  });
-}
-
-/** Promisify one transaction, so callers are not writing event plumbing. */
-function run<T>(
-  mode: IDBTransactionMode,
-  work: (store: IDBObjectStore) => IDBRequest<T>,
-): Promise<T> {
-  return openDatabase().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const tx = db.transaction(STORE, mode);
-        const request = work(tx.objectStore(STORE));
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('Frame store write failed'));
-        tx.oncomplete = () => db.close();
-      }),
-  );
+function importOnce(): Promise<unknown> {
+  if (!legacyImport) legacyImport = importLegacyFrames().catch(() => 0);
+  return legacyImport;
 }
 
 export async function saveFrame(frame: CapturedFrame): Promise<void> {
-  await run('readwrite', (store) => store.put(frame));
+  // An existing record keeps the course it was filed under: the migration could
+  // work out a course from the collection a lecture belonged to, which the
+  // lecture URL on its own cannot always recover.
+  const held = await listScreenshots(frame.lectureId).catch(() => []);
+  const existing = held.find((shot) => shot.seconds === frame.seconds);
+
+  await saveScreenshot({
+    ...frame,
+    courseId: existing?.courseId ?? courseIdFromUrl(frame.lectureId),
+  });
 }
 
 export async function framesForLecture(lectureId: string): Promise<CapturedFrame[]> {
-  const frames = await run<CapturedFrame[]>('readonly', (store) =>
-    store.index('lectureId').getAll(lectureId),
-  );
-  return frames.sort((a, b) => a.seconds - b.seconds);
+  await importOnce();
+  return listScreenshots(lectureId);
 }
 
 export async function allFrames(): Promise<CapturedFrame[]> {
-  const frames = await run<CapturedFrame[]>('readonly', (store) => store.getAll());
-  return frames.sort((a, b) => a.seconds - b.seconds);
+  await importOnce();
+  return listAllScreenshots();
 }
 
 /**
@@ -104,11 +104,7 @@ export async function readAndStoreFrame(frame: CapturedFrame): Promise<FrameRead
 }
 
 export async function deleteFrame(lectureId: string, seconds: number): Promise<void> {
-  await run('readwrite', (store) => store.delete([lectureId, seconds]));
-}
-
-export async function clearFrames(): Promise<void> {
-  await run('readwrite', (store) => store.clear());
+  await deleteScreenshot(lectureId, seconds);
 }
 
 /* -------------------------------------------------------------------------- */
