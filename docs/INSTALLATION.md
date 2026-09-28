@@ -1,47 +1,75 @@
 # 🛠️ Installation Guide
 
-## Installation Options
+## Option 1: Chrome Web Store
 
-### **Option 1: Chrome Web Store (Coming Soon)**
-- Visit the Chrome Web Store
-- Click "Add to Chrome"
-- Start extracting transcripts immediately
+Coming soon.
 
-### **Option 2: Manual Installation (Developer Mode)**
-1. **Build** the extension from source (see Option 3 below)
-2. **Open Chrome** and go to `chrome://extensions/`
-3. **Enable** "Developer mode" (top right toggle)
-4. **Click** "Load unpacked" and select the `dist` folder
-5. **Pin** the extension to your toolbar for easy access
+## Option 2: Load a release unpacked
 
-### **Option 3: Build from Source**
+1. Download the latest release zip and extract it
+2. Open `chrome://extensions/`
+3. Enable **Developer mode** (top-right toggle)
+4. Click **Load unpacked** and select the extracted folder
+5. Pin the extension to your toolbar
+
+## Option 3: Build from source
+
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/transcript-extractor.git
-cd transcript-extractor
-
-# Install dependencies
+git clone https://github.com/pras-ops/udemy-transcript-extractor.git
+cd udemy-transcript-extractor
 npm install
 
-# Build the extension
-npm run build
+# Required. The embedding table is a build input and is not committed —
+# without it the bundle builds but semantic search has nothing to load.
+npm run fetch:model
 
-# Load the dist folder in Chrome extensions
+# Typecheck, lint, test
+npm run verify
+
+# Build, then check against Chrome Web Store rules
+npm run deploy
 ```
 
+Then load the **`dist/`** folder via **Load unpacked**, as in Option 2.
+
+## After installing
+
+**Set up the shortcuts.** Two are suggested by default:
+
+| Shortcut | Does |
+| --- | --- |
+| `Alt+Shift+N` | Write a note against the current moment |
+| `Alt+Shift+S` | Capture the frame on screen |
+
+Chrome silently drops a suggested shortcut that conflicts with another
+extension, so if one does nothing, check and rebind it at
+`chrome://extensions/shortcuts`.
+
+**Reload any lecture tabs you already had open.** Content scripts are injected
+at page load, so a tab that was open during installation is not yet running the
+extension.
+
 ## Requirements
-- Chrome browser (version 88+)
-- Internet connection (for transcript extraction)
-- Active account on supported platforms (for course access)
 
-## Troubleshooting
+- **Chrome 88+** for everything the extension does on its own
+- **A considerably newer Chrome, plus supported hardware**, for the two optional
+  features that use the browser's built-in on-device model: reading text off a
+  captured frame, and writing prose summaries. The extension probes for it and
+  simply does not offer those features when it is absent — nothing else is
+  affected
+- An account on the platform whose lectures you are reading
+- **Node 18+** to build from source
 
-### Common Issues
-1. **Extension not loading**: Make sure Developer mode is enabled
-2. **Transcript not extracting**: Check if you're on a supported platform
-3. **Permission errors**: Ensure the extension has necessary permissions
+The extension makes no network requests while it runs. You need a connection to
+watch the lecture, not to extract it.
 
-### Getting Help
-- Check the GitHub issues page
-- Contact support via email
-- Review the documentation in the docs folder
+## If something goes wrong
+
+| Symptom | First thing to check |
+| --- | --- |
+| Extension will not load unpacked | Developer mode is enabled, and you selected `dist/`, not the repo root |
+| Nothing is extracted | The player's own transcript panel is open — the extension reads what the page renders |
+| A shortcut does nothing | `chrome://extensions/shortcuts` for a conflict |
+| Build fails | `npm run fetch:model` has been run, and Node is 18+ |
+
+📖 **Everything else: [TROUBLESHOOTING.md](../TROUBLESHOOTING.md)**

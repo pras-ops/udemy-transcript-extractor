@@ -2,7 +2,136 @@
 
 All notable changes to this project are documented here.
 
-## [4.2.0] — unreleased
+## [4.3.0] — 2026-09-28
+
+The release that closed the loop between watching a lecture and keeping notes
+from it.
+
+4.2.0 could turn a course into files. It could not help you study one: there was
+nowhere to read a transcript properly, nowhere to mark a passage, and no way
+back from a note to the moment it came from. This release is that half.
+
+### Added — the big one
+
+- **A dashboard.** A full browser tab, not a panel, because the popup is
+  destroyed the moment it loses focus — which takes every in-flight index and
+  read with it. Indexing a whole library and reading a three-thousand-word
+  transcript are only possible in a tab.
+
+  It holds the library grouped by course, a lecture view with insights,
+  transcript, highlights, screenshots and notes, search across every course at
+  once, and cross-library views of everything you have marked or written.
+
+- **A learning library, in IndexedDB.** `chrome.storage.local` serialises the
+  whole value on every write and caps at 10 MB; a few courses of transcripts and
+  stills exceed both the ceiling and the patience. Courses, lectures,
+  transcripts, highlights, notes and screenshots now live in indexed object
+  stores, and what 4.2.0 collected migrates in on first open.
+
+- **A reader instead of a caption dump.** The transcript is grouped into
+  paragraphs, with a **Lines** toggle back to one cue per line. A caption cue is
+  about two seconds of speech; rendering one per line was the wall of
+  unreadable text this was supposed to fix, and the paragraph grouping the
+  exports had always used simply was not wired to the screen.
+
+- **Highlights, with the moment attached.** Select a passage and it captures the
+  timestamp it was said at, because a highlight whose moment has to be typed is
+  one nobody makes. Attach your own note to a highlight and the quote and what
+  you made of it stay one thought.
+
+- **Click any timestamp to go back to the video.** In the reader, your
+  highlights, your notes, your screenshots, the chapter list, a search result.
+
+  Udemy ignores `#t=` in its URLs, which is why people scrub the timeline by
+  hand hunting for the line they just read — so this does not use a link. The
+  content script holds the `<video>` element, where the playhead is a property.
+  A selection is anchored to the cue it actually starts in rather than the
+  paragraph it sits in, because a timestamp landing a minute early defeats the
+  point.
+
+- **Notes while watching — `Alt+Shift+N`.** A composer opens over the video,
+  pauses it, takes the moment you reacted to, and saves. The complaint this
+  answers is not that notes are hard to write; it is the round trip of pausing,
+  alt-tabbing, finding the page, typing five words and hunting for your place
+  again.
+
+  A content script cannot write to the library — its `indexedDB` is the *site's*,
+  so a note would land in Udemy's storage where nothing could read it — so notes
+  queue in `chrome.storage` and the dashboard drains them on open. The composer
+  says that, rather than claiming "Saved". This restores, in a better place, the
+  notes feature 4.2.0 removed.
+
+- **Screenshots while watching — `Alt+Shift+S`.** Captures the frame on screen
+  without opening the popup, which closes the moment you click back into the
+  page.
+
+  This is why a background service worker exists again, at ~6 KB and for this
+  one job. Capture needs `chrome.tabs.captureVisibleTab`; a content script has
+  no `chrome.tabs`, and the `activeTab` grant that call depends on is only given
+  when the user *invokes* the extension — a keypress on the page is not that, but
+  a `chrome.commands` shortcut is, and command events are only delivered to a
+  background context. Adds `background` and `commands` to the manifest.
+
+- **Study notes export — the thing the dashboard could not do at all.** Until
+  now everything you produced while studying was trapped in IndexedDB: the ten
+  export formats all take a transcript string, which is all the popup has.
+
+  The study document carries the rest — your highlights marked `==inline==`,
+  your notes at their moments, and text read off your frames in fenced blocks —
+  either with the transcript or as the digest alone. A whole course exports as
+  one document, each lecture under its own heading, because timestamps restart
+  at zero in every video.
+
+  The reader and the export share one placement rule, deliberately: an export
+  that filed your notes differently from the page you wrote them on would be
+  quietly wrong in a way nobody would check.
+
+- **Cross-library views** for every highlight and every note, filterable, each
+  linking back to its lecture and its moment.
+
+- **First tests for the extractors**, the most fragile code in the project and
+  previously the only part with none. Covers `findPrimaryVideo` — which decides
+  what seek, capture and quick notes all act on — Udemy's structure parsing
+  including its selector-drift fallback, and platform detection.
+
+  Read the caveat in `docs/TECHNICAL.md` before trusting a green run: these
+  fixtures are hand-built to the selector contract, not captured from a live
+  page, so they prove the parsing logic is intact and not that extraction works.
+
+### Changed
+
+- **One store for screenshots.** `frame-service` no longer owns a database; it
+  delegates to the library, and whatever the old `transcript-extractor-frames`
+  store still holds is imported lazily and idempotently. Without this the
+  dashboard would only ever have seen the frames present at its first open, and
+  a readout made in one place would never have reached the other.
+- Lecture identity preserves the `v` query parameter — see Fixed.
+- `vitest.config.ts` no longer carries `environmentMatchGlobs`, which **Vitest 4
+  removed**. It had silently stopped routing `*.dom.test.ts` to jsdom; those
+  files now declare the environment themselves.
+
+### Fixed
+
+- **Collecting a second YouTube video overwrote the first.** Lecture identity was
+  origin-plus-path with the query stripped, and YouTube puts the video id in the
+  query — so every watch page collapsed onto `youtube.com/watch`. `addLecture`
+  was doing exactly what it should on ids that could not tell two videos apart.
+
+  The fix preserves `v` and nothing else from the query: `&t=` and `&list=`
+  describe where you are in a video, not which video it is. It is deliberately
+  additive, so Udemy and Coursera ids are byte-identical and nothing already
+  collected is orphaned. It does not recover transcripts already lost.
+- Notes and stills anchored to a paragraph are found by range rather than by an
+  exact second, so switching the reader to paragraphs no longer hides them.
+- A filtered transcript no longer stretches one block's window across everything
+  the filter hid, which had filed every note in between under the last matching
+  line.
+- Highlight marks are indexed by their block rather than by position in the
+  unfiltered cue list, so they follow the passage they belong to.
+
+---
+
+## [4.2.0] — 2026-09-27
 
 The release that removed the AI runtime and got search working anyway.
 
@@ -21,6 +150,20 @@ The release that removed the AI runtime and got search working anyway.
 
 ### Added
 
+- **Summaries, on every machine.** A summary built from the lecturer's own
+  most representative sentences, selected with the embeddings already in the
+  package — so it exists without any model, and cannot state something the
+  lecture did not. Where Chrome's on-device model is present, a button rewrites
+  those same lines as prose, clearly labelled as generated.
+
+  The two tiers compose out of necessity: the on-device model accepts about
+  1024 tokens, roughly 750 words, where one lecture runs to three thousand.
+  Feeding it the extractive selection rather than the transcript is what makes
+  it usable at all.
+- **Organized notes** (`.md`): the transcript rewritten with a heading per
+  topic, time ranges and paragraphs. Segmentation finds where the subject
+  turns, keyphrase extraction names each section. Nothing is generated — the
+  only additions are the headings, lifted from the section they title.
 - **Screenshot capture.** A transcript cannot show a line of code, a diagram
   or a step in a demo, which is most of what a programming lecture is. Pause on
   something and capture the frame; stills are stored with the lecture and land
@@ -67,6 +210,23 @@ The release that removed the AI runtime and got search working anyway.
 
 ### Fixed
 
+- **Transcripts came out mis-sequenced.** Two causes, compounding. The player
+  autoscrolls its transcript panel to follow playback, so scraping a lecture
+  you had been watching began mid-way and only ever scrolled down — the opening
+  lines arrived last, or not at all. And the reordering pass ran only when
+  *every* cue carried a timestamp, so one untimed line discarded the ordering
+  of the several hundred around it. Now the panel is scrolled to the top first,
+  and untimed cues are anchored to the line before them.
+- **Key concepts included timestamps and filler.** Bare numbers like "09 22"
+  passed every filter — each token is two characters, neither is a stopword,
+  and the length rule only applied to single words — and then ranked well by
+  being frequent. Numeric tokens are now rejected, along with discourse filler
+  the lecturer repeats constantly.
+- **The analysis pass cancelled itself.** The effect that built the semantic
+  index kept `index.status` in its dependency list and *set* that status, so
+  React re-ran it and the re-run's cleanup cancelled work that had just begun.
+  Semantic search, chapters, concepts and summaries never once completed.
+  Keyword search still worked, which is why it went unnoticed.
 - Timestamps are plain text everywhere — in the documents and in the search
   results. They were links, which is noise in a file that gets pasted into a
   notes app or a model's context.

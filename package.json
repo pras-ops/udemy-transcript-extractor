@@ -1,7 +1,7 @@
 {
   "name": "transcript-extractor-extension",
   "private": true,
-  "version": "4.2.0",
+  "version": "4.3.0",
   "type": "module",
   "browser": {
     "perf_hooks": false,
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run typecheck && vite build --minify && vite build --config vite.content.config.ts",
+    "build": "npm run typecheck && vite build --minify && vite build --config vite.content.config.ts && vite build --config vite.background.config.ts",
     "build:extension": "npm run build && node scripts/build-extension.js",
     "deploy": "npm run build:extension && npm run check:store",
     "lint": "eslint .",
@@ -21,7 +21,8 @@
     "test:watch": "vitest",
     "verify": "npm run typecheck && npm run lint && npm run test",
     "fetch:model": "node scripts/fetch-search-model.js",
-    "check:store": "node scripts/check-store-compliance.js"
+    "check:store": "node scripts/check-store-compliance.js",
+    "package": "node scripts/package-extension.js"
   },
   "dependencies": {
     "clsx": "^2.1.1",

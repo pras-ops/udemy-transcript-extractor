@@ -3,9 +3,9 @@
 ## Ready-to-Deploy Package
 
 The extension is ready for deployment by building from source:
-- **Build Command**: `npm run build`
+- **Build Command**: `npm run deploy` (build, copy assets, then the store gates)
 - **Output**: `dist/` folder with complete extension
-- **Size**: ~15MB (significantly reduced from v3.x)
+- **Size**: ~30 MB, almost entirely the bundled embedding table
 - **Contents**: Complete extension with all features
 
 ## Deployment Instructions
@@ -34,18 +34,27 @@ The extension is ready for deployment by building from source:
 dist/
 ├── manifest.json          # Extension manifest
 ├── content-script.js      # Injected into the page — classic IIFE, not ESM
+├── background.js          # Service worker — classic IIFE, not ESM
 ├── index.html             # Popup
 ├── main.js                # Popup entry
-├── ui.js                  # UI bundle
+├── dashboard.html         # The library, as a full tab
+├── dashboard.js           # Dashboard entry
+├── ui.js                  # Shared UI bundle
 ├── vendor.js              # Third-party bundle
-├── extension-service.js   # Export formats
-├── main.css               # Styling
-├── models/search/         # Static embedding table + vocabulary
+├── extension-service.js   # Export formats, messaging, seek
+├── search-service.js      # Indexing and query orchestration
+├── search-service.css     # Styling
+├── models/                # Static embedding table + vocabulary
 └── icons/                 # 16, 32, 48, 128px
 ```
 
-There is no `background.js`. The service worker and the offscreen document were
-removed in 4.2.0 along with the model runtime they hosted.
+`background.js` is back as of 4.3.0, at around 6 KB. The worker removed in 4.2.0
+hosted the model runtime; this one exists for a single job — receiving the
+`Alt+Shift+S` capture command, because `chrome.tabs.captureVisibleTab` is
+unreachable from a content script and the `activeTab` grant it needs is only
+given when the user invokes the extension. Both it and the content script are
+built as IIFE; `check:store` fails the build if the content script regresses to
+ESM.
 
 `models/search/` is the bulk of the package. It is the embedding lookup table,
 shipped with the extension so search never makes a network call — which is also
@@ -57,7 +66,7 @@ mentioning in the submission notes, since it is a large and conspicuous change.
 ### **Store Listing**
 - **Name**: Transcript Extractor
 - **Description**: Extract transcripts from educational videos
-- **Category**: Productivity
+- **Category**: Education (keep this consistent with `STORE_LISTING.md`)
 - **Screenshots**: Include screenshots of the extension in action
 - **Privacy Policy**: Required for Chrome Web Store
 
@@ -74,28 +83,39 @@ mentioning in the submission notes, since it is a large and conspicuous change.
 - **Minor versions**: New features or improvements
 - **Patch versions**: Bug fixes and small improvements
 
-### **Current Version**: v4.0.0
-- Modern ultra-curvy design
-- Smart button functionality
-- Improved user experience
-- Clean architecture
+### **Current Version**: v4.3.0
+- The dashboard: library, reader, cross-course search, highlights and notes
+- Study-notes export, per lecture and per course
+- Click any timestamp to send the lecture's player back to that moment
+- `Alt+Shift+N` notes and `Alt+Shift+S` capture, without leaving the video
+- One screenshot store, shared by the popup and the dashboard
 
 ## Quality Assurance
 
 ### **Testing Checklist**
-- [ ] Extension loads without errors
-- [ ] Transcript extraction works on all supported platforms
+
+Automated — `npm run verify` covers these:
+- [ ] Typecheck, lint and the full test suite pass
+- [ ] `npm run check:store` passes all eight gates
+
+By hand, because nothing below is covered by a test:
+- [ ] Extension loads without errors, and the service worker registers
+- [ ] Transcript extraction works on Udemy, Coursera and YouTube
+- [ ] `Alt+Shift+N` opens the composer; the note reaches the dashboard on open
+- [ ] `Alt+Shift+S` captures with the popup **closed**, and the still appears in
+      the dashboard's Screenshots tab
+- [ ] Frames captured before this build still appear (the legacy import)
+- [ ] Clicking a timestamp focuses the lecture tab and seeks
+- [ ] Lecture and course export open correctly, with highlights and notes in them
 - [ ] Export formats work correctly
 - [ ] Dark mode functions properly
-- [ ] Smart button logic works as expected
-- [ ] No console errors
-- [ ] Proper error handling
+- [ ] No console errors, in the page or the worker
 
 ### **Performance Metrics**
-- **Load Time**: < 2 seconds
-- **Memory Usage**: < 50MB
-- **Bundle Size**: ~15MB
-- **Startup Time**: < 1 second
+- **Bundle Size**: ~30 MB, of which the embedding table is ~30 MB — the code is
+  under 500 KB
+- **Load Time**: the popup opens immediately; keyword search is usable at once
+  and the embedding tier loads behind it
 
 ## Support and Maintenance
 

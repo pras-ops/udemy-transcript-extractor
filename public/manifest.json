@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Transcript Extractor",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "description": "Extract lecture transcripts from any video site and export them as notes, subtitles, spreadsheets or retrieval-ready chunks.",
   "permissions": [
     "activeTab",
@@ -29,6 +29,17 @@
       "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "capture-frame": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Capture the current lecture frame"
     }
   },
   "content_scripts": [
