@@ -279,6 +279,142 @@ export function groupIntoParagraphs(
   return paragraphs;
 }
 
+/**
+ * One unit of reading: a paragraph of prose, or a single caption cue.
+ *
+ * `endSeconds` is where the next block starts. It is what lets a note, a
+ * highlight or a captured frame find the block it belongs under — they are all
+ * filed against the exact second they were made at, which lined up one-to-one
+ * with a cue but falls somewhere inside a paragraph.
+ */
+export interface Block {
+  startSeconds: number | null;
+  endSeconds: number | null;
+  text: string;
+}
+
+export type ReadingMode = 'paragraphs' | 'lines';
+
+/**
+ * The transcript as it is read, with each block's stretch of the lecture.
+ *
+ * Shared by the dashboard's reader and the study-notes export on purpose: an
+ * export that placed someone's notes differently from the page they wrote them
+ * on would be quietly wrong in a way nobody would think to check.
+ */
+export function readingBlocks(cues: Cue[], mode: ReadingMode = 'paragraphs'): Block[] {
+  const units: { startSeconds: number | null; text: string }[] =
+    mode === 'paragraphs'
+      ? groupIntoParagraphs(cues)
+      : cues.map((cue) => ({ startSeconds: cue.startSeconds, text: cue.text }));
+
+  return units.map((unit, index) => ({
+    ...unit,
+    endSeconds: units[index + 1]?.startSeconds ?? null,
+  }));
+}
+
+/**
+ * The items anchored inside a block's stretch of the lecture.
+ *
+ * Half-open on purpose: an item landing exactly on the next block's start
+ * belongs to that block, so nothing is reported twice.
+ */
+export function anchoredIn<T>(
+  items: T[],
+  at: (item: T) => number | undefined,
+  block: Block,
+): T[] {
+  if (block.startSeconds === null) return [];
+  const from = block.startSeconds;
+  const to = block.endSeconds ?? Number.MAX_SAFE_INTEGER;
+
+  return items.filter((item) => {
+    const seconds = at(item);
+    return seconds !== undefined && seconds >= from && seconds < to;
+  });
+}
+
+/**
+ * The moment a passage of the transcript begins.
+ *
+ * Needed because a reader selects text, not a timestamp. Where the transcript is
+ * rendered one cue per line the enclosing element carries the moment exactly,
+ * but a paragraph is a minute of speech — reading the moment off it would anchor
+ * a highlight up to a minute before the sentence that was marked, and a
+ * timestamp that lands early defeats the point of being able to jump back.
+ *
+ * So the passage's opening words are matched against the cues. Shorter and
+ * shorter openings are tried because a selection can begin mid-cue, in which
+ * case its first few words straddle two cues and no single cue holds all of
+ * them. Very short openings are refused outright: two common words match
+ * somewhere in almost any lecture, and a confidently wrong moment is worse than
+ * falling back to the paragraph's own start.
+ *
+ * `notBefore` is that paragraph start. A phrase a lecturer repeats would
+ * otherwise anchor to the first time they said it rather than the passage in
+ * front of the reader.
+ */
+export function momentOfPassage(
+  cues: Cue[],
+  passage: string,
+  notBefore: number | null = null,
+): number | undefined {
+  const words = passage.split(/\s+/).filter(Boolean);
+
+  for (let take = Math.min(6, words.length); take >= 2; take -= 1) {
+    const opening = words.slice(0, take).join(' ').toLowerCase();
+    if (opening.length < 8) break;
+
+    for (const cue of cues) {
+      if (cue.startSeconds === null) continue;
+      if (notBefore !== null && cue.startSeconds < notBefore) continue;
+      if (cue.text.toLowerCase().includes(opening)) return cue.startSeconds;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Put scraped cues back into the order they were spoken.
+ *
+ * A virtualised transcript panel only keeps the lines near the scroll offset in
+ * the DOM, so cues are gathered by scrolling and arrive in whatever order the
+ * harvest saw them. That order is trustworthy only if the scroll started at the
+ * top — and with the player's autoscroll following playback, it usually does
+ * not. The symptom is a transcript whose paragraphs are subtly out of sequence,
+ * differently each time, which is far worse than an obvious failure.
+ *
+ * Untimed cues inherit the timestamp of the cue before them rather than being
+ * dropped or forcing the whole transcript back to harvest order. The sort is
+ * stable, so cues sharing a timestamp keep their relative order, and cues
+ * appearing before any timestamp stay at the front.
+ */
+export function orderCollectedCues<T extends { seconds: number | null }>(cues: T[]): T[] {
+  if (cues.length === 0) return cues;
+
+  let carried: number | null = null;
+  const anchored = cues.map((cue, index) => {
+    if (cue.seconds !== null) carried = cue.seconds;
+    return { cue, index, at: cue.seconds ?? carried };
+  });
+
+  // Nothing to order by; harvest order is all there is.
+  if (anchored.every((entry) => entry.at === null)) return cues;
+
+  return anchored
+    .slice()
+    .sort((a, b) => {
+      // A cue preceding every timestamp belongs at the front.
+      if (a.at === null && b.at === null) return a.index - b.index;
+      if (a.at === null) return -1;
+      if (b.at === null) return 1;
+      return a.at - b.at || a.index - b.index;
+    })
+    .map((entry) => entry.cue);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Chunking                                                                    */
 /* -------------------------------------------------------------------------- */

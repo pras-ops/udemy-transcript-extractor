@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  groupIntoParagraphs,
+  momentOfPassage,
+  orderCollectedCues,
   parseTimestamp,
   formatTimestamp,
   parseTranscript,
@@ -364,5 +367,161 @@ describe('buildChunks', () => {
 
   it('returns nothing for an empty transcript', () => {
     expect(buildChunks('', { title: 'T' })).toEqual([]);
+  });
+});
+
+describe('groupIntoParagraphs', () => {
+  const cue = (startSeconds: number | null, text: string) => ({ startSeconds, text });
+
+  /** `words` cues of one word each, none of them ending a sentence. */
+  const filler = (from: number, words: number) =>
+    Array.from({ length: words }, (_, i) => cue(from + i, `word${i}`));
+
+  it('keeps a paragraph going until it has substance and a sentence ends', () => {
+    // The point of the reader: a caption cue is about two seconds of speech,
+    // so one per line is the wall of text people complain about.
+    const cues = [...filler(0, 70), cue(70, 'And that is the idea.'), cue(72, 'Next.')];
+    const paragraphs = groupIntoParagraphs(cues);
+
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs[0].text.endsWith('And that is the idea.')).toBe(true);
+    expect(paragraphs[1].text).toBe('Next.');
+  });
+
+  it('does not break on a sentence end before the paragraph has substance', () => {
+    const cues = [cue(0, 'Hello.'), cue(2, 'Hi.'), cue(4, 'Welcome back.')];
+    expect(groupIntoParagraphs(cues)).toHaveLength(1);
+  });
+
+  it('takes its moment from the first cue that has one', () => {
+    // This timestamp is what the reader jumps back to the video with, so a
+    // paragraph opening on an untimed cue must not lose the whole block.
+    const paragraphs = groupIntoParagraphs([cue(null, 'Untitled opening.'), cue(30, 'Then this.')]);
+
+    expect(paragraphs).toHaveLength(1);
+    expect(paragraphs[0].startSeconds).toBe(30);
+  });
+
+  it('reports no moment when nothing in the paragraph had one', () => {
+    const paragraphs = groupIntoParagraphs([cue(null, 'a'), cue(null, 'b')]);
+    expect(paragraphs[0].startSeconds).toBeNull();
+  });
+
+  it('flushes what is left over at the end', () => {
+    // A lecture that trails off mid-sentence still has to render its last words.
+    const cues = [...filler(0, 70), cue(70, 'trailing off')];
+    const paragraphs = groupIntoParagraphs(cues);
+
+    expect(paragraphs.at(-1)?.text.endsWith('trailing off')).toBe(true);
+    expect(paragraphs.flatMap((p) => p.text.split(' '))).toHaveLength(72);
+  });
+
+  it('returns nothing for an empty transcript', () => {
+    expect(groupIntoParagraphs([])).toEqual([]);
+  });
+});
+
+describe('momentOfPassage', () => {
+  const cues: Cue[] = [
+    { startSeconds: 0, text: 'Welcome back to the course.' },
+    { startSeconds: 12, text: 'Gradient descent follows the slope downhill.' },
+    { startSeconds: 24, text: 'We compute a derivative and take a step.' },
+    { startSeconds: 600, text: 'Gradient descent follows the slope downhill.' },
+  ];
+
+  it('finds the cue a passage begins in', () => {
+    // The point: a highlight made inside a paragraph has to jump back to the
+    // sentence it marked, not to the paragraph's opening a minute earlier.
+    expect(momentOfPassage(cues, 'We compute a derivative')).toBe(24);
+  });
+
+  it('matches a passage that begins mid-cue and runs into the next', () => {
+    // No single cue holds all six opening words, so shorter openings are tried.
+    expect(momentOfPassage(cues, 'the slope downhill. We compute a derivative')).toBe(12);
+  });
+
+  it('prefers the repeat at or after where the reader is', () => {
+    // The lecturer says this twice; anchoring to the first would send someone
+    // reading the closing recap back ten minutes.
+    expect(momentOfPassage(cues, 'Gradient descent follows the slope')).toBe(12);
+    expect(momentOfPassage(cues, 'Gradient descent follows the slope', 500)).toBe(600);
+  });
+
+  it('gives up rather than guess from too little to go on', () => {
+    // Two short words match somewhere in almost any lecture; a confidently
+    // wrong moment is worse than falling back to the paragraph's own start.
+    expect(momentOfPassage(cues, 'we do')).toBeUndefined();
+    expect(momentOfPassage(cues, 'the')).toBeUndefined();
+  });
+
+  it('gives up on a passage that is not in the transcript', () => {
+    expect(momentOfPassage(cues, 'something nobody said in this lecture')).toBeUndefined();
+  });
+
+  it('ignores cues that carry no moment of their own', () => {
+    const untimed: Cue[] = [
+      { startSeconds: null, text: 'We compute a derivative and take a step.' },
+      { startSeconds: 30, text: 'We compute a derivative and take a step.' },
+    ];
+    expect(momentOfPassage(untimed, 'We compute a derivative')).toBe(30);
+  });
+
+  it('handles an empty transcript and an empty passage', () => {
+    expect(momentOfPassage([], 'We compute a derivative')).toBeUndefined();
+    expect(momentOfPassage(cues, '')).toBeUndefined();
+  });
+});
+
+describe('orderCollectedCues', () => {
+  const cue = (seconds: number | null, text: string) => ({ seconds, text });
+
+  it('leaves an already-ordered transcript alone', () => {
+    const cues = [cue(0, 'a'), cue(10, 'b'), cue(20, 'c')];
+    expect(orderCollectedCues(cues).map((c) => c.text)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('repairs a harvest that began mid-lecture', () => {
+    // The real failure: the player autoscrolls the panel to follow playback, so
+    // scraping starts in the middle and the opening lines arrive last.
+    const cues = [cue(600, 'middle'), cue(700, 'later'), cue(0, 'opening')];
+    expect(orderCollectedCues(cues).map((c) => c.text)).toEqual([
+      'opening',
+      'middle',
+      'later',
+    ]);
+  });
+
+  it('anchors an untimed cue to the line before it', () => {
+    // One untimed cue used to discard the ordering of every other cue.
+    const cues = [cue(0, 'a'), cue(null, 'untimed'), cue(10, 'c')];
+    expect(orderCollectedCues(cues).map((c) => c.text)).toEqual(['a', 'untimed', 'c']);
+  });
+
+  it('still repairs order when some cues carry no timestamp', () => {
+    const cues = [cue(600, 'middle'), cue(null, 'after middle'), cue(0, 'opening')];
+    expect(orderCollectedCues(cues).map((c) => c.text)).toEqual([
+      'opening',
+      'middle',
+      'after middle',
+    ]);
+  });
+
+  it('keeps cues that precede every timestamp at the front', () => {
+    const cues = [cue(null, 'preamble'), cue(5, 'first timed')];
+    expect(orderCollectedCues(cues).map((c) => c.text)).toEqual(['preamble', 'first timed']);
+  });
+
+  it('preserves harvest order when nothing is timed', () => {
+    const cues = [cue(null, 'a'), cue(null, 'b'), cue(null, 'c')];
+    expect(orderCollectedCues(cues).map((c) => c.text)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('is stable for cues sharing a timestamp', () => {
+    const cues = [cue(10, 'first'), cue(10, 'second'), cue(10, 'third')];
+    expect(orderCollectedCues(cues).map((c) => c.text)).toEqual(['first', 'second', 'third']);
+  });
+
+  it('handles an empty transcript', () => {
+    expect(orderCollectedCues([])).toEqual([]);
   });
 });
