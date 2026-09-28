@@ -12,7 +12,7 @@
  */
 
 export interface CollectedLecture {
-  /** Stable per lecture: the URL without query or hash. */
+  /** Stable per lecture: see `lectureId`. */
   id: string;
   title: string;
   url?: string;
@@ -25,12 +25,24 @@ export interface CollectedLecture {
  *
  * Query and hash are stripped: Udemy appends `?start=` and `#overview`, and the
  * same lecture reached by two different links is still one lecture.
+ *
+ * `v` is the exception, because YouTube puts the video id in the query rather
+ * than the path. Dropping it collapsed every watch page onto a single id, so
+ * collecting a second YouTube video replaced the first one's transcript in
+ * place — `addLecture` matches on this id, and it had no way to tell two
+ * videos apart. Nothing else about the query survives: `&t=`, `&list=` and the
+ * rest describe where you are in a video, not which video it is.
+ *
+ * This is the one definition of lecture identity. `normalizeLectureUrl`, which
+ * matches a stored lecture to the browser tab showing it, is built on top of
+ * it rather than beside it.
  */
 export function lectureId(url: string | undefined, fallback: string): string {
   if (!url) return fallback;
   try {
     const parsed = new URL(url);
-    return `${parsed.origin}${parsed.pathname}`;
+    const video = parsed.searchParams.get('v');
+    return `${parsed.origin}${parsed.pathname}${video ? `?v=${video}` : ''}`;
   } catch {
     return url;
   }

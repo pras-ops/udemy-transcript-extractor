@@ -29,8 +29,41 @@ describe('lectureId', () => {
     );
   });
 
+  it('keeps YouTube videos distinct, where the id lives in the query', () => {
+    // The bug this guards: dropping the query collapsed every watch page onto
+    // `youtube.com/watch`, so `addLecture` treated the second video collected
+    // as a re-extraction of the first and overwrote its transcript.
+    expect(lectureId('https://www.youtube.com/watch?v=aaaaaaaaaaa', 'f')).not.toBe(
+      lectureId('https://www.youtube.com/watch?v=bbbbbbbbbbb', 'f'),
+    );
+  });
+
+  it('ignores the rest of a YouTube query, which says where you are not which video', () => {
+    const plain = lectureId('https://www.youtube.com/watch?v=aaaaaaaaaaa', 'f');
+
+    expect(lectureId('https://www.youtube.com/watch?v=aaaaaaaaaaa&t=90s', 'f')).toBe(plain);
+    expect(lectureId('https://www.youtube.com/watch?v=aaaaaaaaaaa&list=PL123', 'f')).toBe(plain);
+    expect(lectureId('https://www.youtube.com/watch?list=PL123&v=aaaaaaaaaaa', 'f')).toBe(plain);
+    expect(lectureId('https://www.youtube.com/watch?v=aaaaaaaaaaa#t=10', 'f')).toBe(plain);
+  });
+
+  it('leaves ids on platforms that key off the path exactly as they were', () => {
+    // These are the ids already sitting in people's libraries. Preserving `v`
+    // had to be additive: any change here orphans stored transcripts.
+    expect(lectureId('https://www.udemy.com/course/x/learn/lecture/42?start=15', 'f')).toBe(
+      'https://www.udemy.com/course/x/learn/lecture/42',
+    );
+    expect(lectureId('https://www.coursera.org/learn/x/lecture/abc/title?t=1', 'f')).toBe(
+      'https://www.coursera.org/learn/x/lecture/abc/title',
+    );
+  });
+
   it('falls back when there is no usable url', () => {
     expect(lectureId(undefined, 'fallback')).toBe('fallback');
+  });
+
+  it('keeps a url it cannot parse rather than dropping it', () => {
+    expect(lectureId('not a url', 'fallback')).toBe('not a url');
   });
 });
 
@@ -67,6 +100,38 @@ describe('addLecture', () => {
     const original = addLecture([], lecture('/l/1', 'One'));
     addLecture(original, lecture('/l/2', 'Two'));
     expect(original).toHaveLength(1);
+  });
+});
+
+describe('addLecture with real lecture ids', () => {
+  const collected = (url: string, transcript: string) => ({
+    id: lectureId(url, url),
+    title: transcript,
+    url,
+    transcript,
+    collectedAt: 1,
+  });
+
+  it('accumulates two YouTube videos instead of replacing the first', () => {
+    // End to end over the actual bug: `addLecture` was doing exactly what it
+    // should, on ids that could not tell two videos apart.
+    const first = collected('https://www.youtube.com/watch?v=aaaaaaaaaaa', 'first');
+    const second = collected('https://www.youtube.com/watch?v=bbbbbbbbbbb', 'second');
+
+    const collection = addLecture(addLecture([], first), second);
+
+    expect(collection).toHaveLength(2);
+    expect(collection.map((item) => item.transcript)).toEqual(['first', 'second']);
+  });
+
+  it('still replaces in place when the same video is collected twice', () => {
+    const once = collected('https://www.youtube.com/watch?v=aaaaaaaaaaa', 'first pass');
+    const again = collected('https://www.youtube.com/watch?v=aaaaaaaaaaa&t=120s', 'second pass');
+
+    const collection = addLecture(addLecture([], once), again);
+
+    expect(collection).toHaveLength(1);
+    expect(collection[0].transcript).toBe('second pass');
   });
 });
 
